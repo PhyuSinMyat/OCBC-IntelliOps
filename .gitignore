@@ -1,0 +1,62 @@
+
+# =====================================
+# OCBC IntelliOps - Git Ignore
+# =====================================
+
+# Python virtual environments
+venv/
+.venv/
+env/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Python testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Build files
+build/
+dist/
+*.egg-info/
+
+# IDE and editor
+.vscode/
+.idea/
+
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Local databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+*.log
+logs/
+
+# Generated synthetic data
+synthetic_labels.csv
+synthetic_data/
+generated_data/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Frontend (Next.js / Node.js)
+node_modules/
+.next/
+out/
+coverage/
+npm-debug.log*

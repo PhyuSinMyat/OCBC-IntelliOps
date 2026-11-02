@@ -1,0 +1,224 @@
+{
+  "customers": [
+    {
+      "id": "CUS-001",
+      "name": "Alex Tan",
+      "customerType": "INDIVIDUAL"
+    },
+    {
+      "id": "CUS-002",
+      "name": "Maya Lim",
+      "customerType": "INDIVIDUAL"
+    },
+    {
+      "id": "CUS-003",
+      "name": "Northstar Trading Pte Ltd",
+      "customerType": "BUSINESS"
+    },
+    {
+      "id": "CUS-004",
+      "name": "Daniel Koh",
+      "customerType": "INDIVIDUAL"
+    },
+    {
+      "id": "CUS-005",
+      "name": "Willow Studio Pte Ltd",
+      "customerType": "BUSINESS"
+    },
+    {
+      "id": "CUS-006",
+      "name": "Priya Nair",
+      "customerType": "INDIVIDUAL"
+    },
+    {
+      "id": "CUS-007",
+      "name": "Ethan Lee",
+      "customerType": "INDIVIDUAL"
+    },
+    {
+      "id": "CUS-008",
+      "name": "Harbour Works Pte Ltd",
+      "customerType": "BUSINESS"
+    }
+  ],
+  "accounts": [
+    {
+      "id": "ACC-100001",
+      "reference": "ACC-100001",
+      "customerRef": "CUS-001",
+      "customer": "Alex Tan",
+      "customerType": "INDIVIDUAL",
+      "accountType": "SAVINGS",
+      "type": "Savings",
+      "currency": "SGD",
+      "openingCents": 4250000,
+      "status": "Active",
+      "createdAt": "2026-10-01T00:00:00Z"
+    },
+    {
+      "id": "ACC-100002",
+      "reference": "ACC-100002",
+      "customerRef": "CUS-002",
+      "customer": "Maya Lim",
+      "customerType": "INDIVIDUAL",
+      "accountType": "CURRENT",
+      "type": "Current",
+      "currency": "SGD",
+      "openingCents": 1875000,
+      "status": "Active",
+      "createdAt": "2026-10-02T00:00:00Z"
+    },
+    {
+      "id": "ACC-100003",
+      "reference": "ACC-100003",
+      "customerRef": "CUS-003",
+      "customer": "Northstar Trading Pte Ltd",
+      "customerType": "BUSINESS",
+      "accountType": "CURRENT",
+      "type": "Current",
+      "currency": "SGD",
+      "openingCents": 28500000,
+      "status": "Active",
+      "createdAt": "2026-10-03T00:00:00Z"
+    },
+    {
+      "id": "ACC-100004",
+      "reference": "ACC-100004",
+      "customerRef": "CUS-004",
+      "customer": "Daniel Koh",
+      "customerType": "INDIVIDUAL",
+      "accountType": "SAVINGS",
+      "type": "Savings",
+      "currency": "USD",
+      "openingCents": 1240000,
+      "status": "Active",
+      "createdAt": "2026-10-04T00:00:00Z"
+    },
+    {
+      "id": "ACC-100005",
+      "reference": "ACC-100005",
+      "customerRef": "CUS-005",
+      "customer": "Willow Studio Pte Ltd",
+      "customerType": "BUSINESS",
+      "accountType": "CURRENT",
+      "type": "Current",
+      "currency": "SGD",
+      "openingCents": 6700000,
+      "status": "Frozen",
+      "createdAt": "2026-10-05T00:00:00Z"
+    },
+    {
+      "id": "ACC-100006",
+      "reference": "ACC-100006",
+      "customerRef": "CUS-006",
+      "customer": "Priya Nair",
+      "customerType": "INDIVIDUAL",
+      "accountType": "SAVINGS",
+      "type": "Savings",
+      "currency": "SGD",
+      "openingCents": 980000,
+      "status": "Active",
+      "createdAt": "2026-10-06T00:00:00Z"
+    },
+    {
+      "id": "ACC-100007",
+      "reference": "ACC-100007",
+      "customerRef": "CUS-007",
+      "customer": "Ethan Lee",
+      "customerType": "INDIVIDUAL",
+      "accountType": "CURRENT",
+      "type": "Current",
+      "currency": "USD",
+      "openingCents": 0,
+      "status": "Closed",
+      "createdAt": "2026-10-07T00:00:00Z"
+    },
+    {
+      "id": "ACC-100008",
+      "reference": "ACC-100008",
+      "customerRef": "CUS-008",
+      "customer": "Harbour Works Pte Ltd",
+      "customerType": "BUSINESS",
+      "accountType": "CURRENT",
+      "type": "Current",
+      "currency": "SGD",
+      "openingCents": 15600000,
+      "status": "Active",
+      "createdAt": "2026-10-08T00:00:00Z"
+    }
+  ],
+  "payment_transactions": [
+    {
+      "id": "TXN-1001",
+      "senderId": "ACC-100003",
+      "receiverId": "ACC-100001",
+      "amountCents": 500000,
+      "currency": "SGD",
+      "status": "Completed",
+      "createdAt": "2026-11-02T02:00:00Z"
+    },
+    {
+      "id": "TXN-1002",
+      "senderId": "ACC-100001",
+      "receiverId": "ACC-100002",
+      "amountCents": 350000,
+      "currency": "SGD",
+      "status": "Completed",
+      "createdAt": "2026-11-02T03:00:00Z"
+    }
+  ],
+  "ledger_journals": [
+    {
+      "id": "JRN-1001",
+      "paymentId": "TXN-1001",
+      "currency": "SGD",
+      "status": "Posted",
+      "postedAt": "2026-11-02T02:00:00Z"
+    },
+    {
+      "id": "JRN-1002",
+      "paymentId": "TXN-1002",
+      "currency": "SGD",
+      "status": "Posted",
+      "postedAt": "2026-11-02T03:00:00Z"
+    }
+  ],
+  "ledger_entries": [
+    {
+      "id": "JRN-1001-D",
+      "journalId": "JRN-1001",
+      "accountId": "ACC-100003",
+      "side": "Debit",
+      "description": "Outgoing transfer",
+      "amountCents": 500000,
+      "currency": "SGD"
+    },
+    {
+      "id": "JRN-1001-C",
+      "journalId": "JRN-1001",
+      "accountId": "ACC-100001",
+      "side": "Credit",
+      "description": "Incoming transfer",
+      "amountCents": 500000,
+      "currency": "SGD"
+    },
+    {
+      "id": "JRN-1002-D",
+      "journalId": "JRN-1002",
+      "accountId": "ACC-100001",
+      "side": "Debit",
+      "description": "Outgoing transfer",
+      "amountCents": 350000,
+      "currency": "SGD"
+    },
+    {
+      "id": "JRN-1002-C",
+      "journalId": "JRN-1002",
+      "accountId": "ACC-100002",
+      "side": "Credit",
+      "description": "Incoming transfer",
+      "amountCents": 350000,
+      "currency": "SGD"
+    }
+  ]
+}

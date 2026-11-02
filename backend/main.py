@@ -1,13 +1,17 @@
 from fastapi import FastAPI
-from database import Base, engine, SessionLocal
-from models import Transaction
-from sqlalchemy import select
+from shared.database import Base, engine
+import models  # Register all domain tables before creating metadata.
+from modules.payment_processing.router import router as payment_router
+from modules.payment_processing.api import router as payments_api
+from modules.core_banking.router import router as core_banking_router
+import modules.core_banking.snapshot  # Register the cross-portal snapshot route.
 
 app = FastAPI(title="OCBC IntelliOps API")
+app.include_router(payment_router)
+app.include_router(payments_api)
+app.include_router(core_banking_router)
 
-# For initial local development only.
-# Use Alembic migrations later.
-Base.metadata.create_all(bind=engine)
+# Apply schema changes explicitly with `alembic upgrade head` before startup.
 
 
 @app.get("/")
@@ -17,52 +21,6 @@ def home():
         "status": "Backend running"
     }
 
-
-@app.post("/demo/transactions")
-def create_demo_transaction():
-    from decimal import Decimal
-
-    with SessionLocal.begin() as db:
-        existing = db.scalar(
-            select(Transaction).where(
-                Transaction.reference == "TXN001"
-            )
-        )
-
-        if existing:
-            return {
-                "message": "Transaction already exists",
-                "reference": existing.reference
-            }
-
-        transaction = Transaction(
-            reference="TXN001",
-            payment_reference="PAY001",
-            amount=Decimal("500.00"),
-            currency="SGD",
-            status="COMPLETED"
-        )
-        db.add(transaction)
-
-    return {"message": "Transaction created", "reference": "TXN001"}
-
-
-@app.get("/transactions")
-def get_transactions():
-    with SessionLocal() as db:
-        transactions = db.scalars(
-            select(Transaction)
-        ).all()
-
-        return [
-            {
-                "reference": t.reference,
-                "amount": str(t.amount),
-                "currency": t.currency,
-                "status": t.status
-            }
-            for t in transactions
-        ]
 
 @app.get("/health")
 def health():

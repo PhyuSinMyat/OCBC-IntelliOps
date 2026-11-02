@@ -3,7 +3,22 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview" },
-  "dependencies": { "react": "^19.0.0", "react-dom": "^19.0.0", "react-router-dom": "^7.0.0", "lucide-react": "^0.468.0" },
-  "devDependencies": { "vite": "^6.0.0" }
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test src/shared/data/bankingRecords.test.js src/portals/core-banking/accountFilters.test.js src/shared/api/banking.test.js src/shared/data/paymentSimulation.test.js",
+    "test:e2e": "playwright test",
+    "test:connected": "playwright test --config playwright.connected.config.js"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "vite": "^6.0.0"
+  }
 }

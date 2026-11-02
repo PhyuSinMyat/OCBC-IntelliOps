@@ -573,57 +573,38 @@ Microservices, Kafka, Kubernetes, n8n, Celery, Redis, RPA bots and live banking 
 
 ## 13. Repository structure
 
+The application uses one React frontend and one FastAPI backend, organized by domain.
+
 ```text
-ocbc-intelliops/
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   ├── layouts/
-│   │   │   ├── GlobalHeader.jsx
-│   │   │   └── PortalSidebar.jsx
-│   │   ├── pages/
-│   │   │   ├── intelliops/
-│   │   │   ├── payments/
-│   │   │   └── core-banking/
-│   │   ├── services/api.js
-│   │   ├── hooks/
-│   │   ├── context/
-│   │   └── App.jsx
-│   ├── package.json
-│   └── .env.example
-├── backend/
-│   ├── app/
-│   │   ├── main.py
-│   │   ├── api/
-│   │   ├── auth/
-│   │   ├── models/
-│   │   ├── schemas/
-│   │   ├── simulators/
-│   │   │   ├── payment.py
-│   │   │   ├── core_banking.py
-│   │   │   └── workflow.py
-│   │   ├── detection/
-│   │   ├── agents/
-│   │   ├── policies/
-│   │   ├── resolution/
-│   │   ├── verification/
-│   │   ├── audit/
-│   │   └── database.py
-│   ├── alembic/
-│   ├── tests/
-│   ├── requirements.txt
-│   └── .env.example
-├── database/
-│   ├── seed/
-│   └── scripts/
-├── docs/
-│   ├── architecture/
-│   ├── erd/
-│   └── demo-scenarios/
-├── docker-compose.yml
-├── .gitignore
-└── README.md
+frontend/src/
+  main.jsx
+  app/                       # Shared shell, portal navigation and routing
+  portals/
+    intelliops/              # Operations workspace
+    core-banking/            # Accounts and ledger journals
+    payment-processing/      # Payment transactions
+  shared/
+    components/              # Record drawer and common record views
+    data/                    # Shared synthetic records and integrity tests
+    api/                     # Reserved for backend clients
+  styles.css
+backend/
+  main.py                    # FastAPI entry point and router registration
+  modules/
+    intelliops/models.py     # Detection rules and exception cases
+    core_banking/models.py   # Ledger records
+    payment_processing/      # Transactions, processing events and API routes
+    workflow/                # Reserved for the workflow simulator
+  shared/                    # Database setup and timestamp helper
+  models.py                  # Compatibility exports for existing scripts
+  database.py                # Compatibility exports for existing scripts
+  generate_data.py
+  requirements.txt
 ```
+
+Existing frontend URLs and backend endpoints are preserved. From `backend/`, continue to start the API with `uvicorn main:app --reload` and seed data with `python generate_data.py`. The compatibility exports register all domain models in the same SQLAlchemy metadata; database table names are unchanged. Workflow implementation remains planned.
+
+Account enhancements and setup are documented in [backend/README.md](backend/README.md), [the migration report](backend/modules/core_banking/MIGRATION_REPORT.md), and [frontend/README.md](frontend/README.md). Apply migrations before starting the API. The frontend supports persistent local simulation and optional authenticated database connection.
 
 ## 14. Proposed API design
 
@@ -848,3 +829,6 @@ A judge can:
 ---
 
 **Project principle:** *Detect accurately. Investigate with evidence. Act only within policy. Verify the real outcome. Audit every step.*
+
+
+Payment creation, processing history, five controlled source scenarios, independent exception detection and cross-portal case links are documented in [backend/PAYMENTS.md](backend/PAYMENTS.md). Apply both additive migrations before backend startup and configure the demo role tokens. AI orchestration and autonomous correction remain planned.

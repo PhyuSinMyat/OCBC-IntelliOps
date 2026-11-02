@@ -11,23 +11,37 @@ env/
 # Python cache
 __pycache__/
 *.py[cod]
-*.pyo
 
 # Environment variables and secrets
 .env
 .env.*
 !.env.example
+!.env.*.example
+.aws/
+.ssh/
+*.pem
+*.key
+*.p12
+*.pfx
 
 # Python testing
 .pytest_cache/
 .coverage
+.coverage.*
+coverage.xml
 htmlcov/
 .tox/
+.nox/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
 
 # Build files
 build/
 dist/
 *.egg-info/
+.vite/
+*.tsbuildinfo
 
 # IDE and editor
 .vscode/
@@ -36,11 +50,32 @@ dist/
 # Operating system
 .DS_Store
 Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
 
 # Local databases
 *.db
 *.sqlite
 *.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.dump
+*.sql.gz
+
+# Local database volumes and exports (keep SQL migrations tracked)
+/backups/
+/database/backups/
+/database/data/
+/postgres-data/
 
 # Logs
 *.log
@@ -54,9 +89,14 @@ generated_data/
 # Jupyter Notebook
 .ipynb_checkpoints/
 
-# Frontend (Next.js / Node.js)
+# Frontend dependencies, builds and test reports
+# Keep package-lock.json tracked for reproducible installs.
 node_modules/
 .next/
 out/
 coverage/
 npm-debug.log*
+playwright-report/
+test-results/
+.nyc_output/
+.eslintcache

@@ -46,13 +46,31 @@ The main **IntelliOps portal** consumes evidence from these systems. The present
 
 ### Intended user roles
 
-| Role | Primary responsibility |
+| Role | Primary Responsibilities |
 |---|---|
-| Operations Analyst | Review exceptions, examine evidence, assign and escalate cases |
-| Reviewer / Approver | Approve, reject or override proposed actions requiring human authorization |
-| Administrator | Manage authorized users, access controls, configurations and rules |
-| Process Owner | Examine resolution times, automation performance and operational trends |
-| System / AI services | Detect, collect evidence, propose actions and execute only policy-authorized simulator operations |
+| **Operations Analyst** | Monitor operational exceptions, investigate cases, examine AI-generated findings, assign cases, request corrective actions, and escalate unresolved issues. |
+| **Administrator** | Perform all Analyst functions, approve or reject proposed resolution actions requiring human authorization, manage users, configure detection rules and resolution policies, and oversee system operations. 
+
+### Role-Based Permissions
+
+| Feature / Permission | Operations Analyst | Administrator |
+|---|:---:|:---:|
+| View Overview Dashboard | ✅ | ✅ |
+| View Exception Center | ✅ | ✅ |
+| Investigate Exceptions | ✅ | ✅ |
+| View AI Investigation Results | ✅ | ✅ |
+| Assign and Escalate Cases | ✅ | ✅ |
+| Request Proposed Resolutions | ✅ | ✅ |
+| View Resolution Workflows | ✅ | ✅ |
+| View Approval Center | ✅ (Read-only) | ✅ |
+| Approve Resolution Actions | ❌ | ✅ |
+| Reject Resolution Actions | ❌ | ✅ |
+| View Audit Trail | ✅ | ✅ |
+| View Analytics | ✅ | ✅ |
+| Manage Users and Roles | ❌ | ✅ |
+| Configure Detection Rules | ❌ | ✅ |
+| Configure Resolution Policies | ❌ | ✅ |
+| Manage System Settings | ❌ | ✅ |
 
 ## 2. Problem statement and objectives
 

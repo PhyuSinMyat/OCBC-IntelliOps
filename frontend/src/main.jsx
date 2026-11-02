@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter, NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { ArrowLeftRight, Bell, Bot, Building2, ChartNoAxesCombined, ChevronRight, CircleDot, FileClock, FileText, LayoutDashboard, Menu, Settings, ShieldCheck, TriangleAlert, UserCheck, Workflow, X } from 'lucide-react';
 import './styles.css';
+import Accounts from './Accounts';
+import BankingRecords from './BankingRecords.jsx';
 
 const portals = [
   { id: 'intelliops', label: 'IntelliOps', description: 'Operations intelligence', icon: Bot, home: '/intelliops/overview', sections: [
@@ -81,6 +83,9 @@ function App() {
 
 function Page({ portal, title }) {
   const { pathname } = useLocation();
+  if (pathname === '/core-banking/accounts') return <Accounts/>;
+  if (pathname === '/core-banking/journals') return <BankingRecords key="journals"/>;
+  if (pathname === '/payments/transactions') return <BankingRecords key="payments" payments/>;
   const Icon = portal.icon;
   const descriptions = {
     Overview: 'A clear view of your operations, from the first signal to a verified outcome.',

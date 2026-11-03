@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useMemo, useState } from 'react';
 import { Building2, Search, ChevronRight, ShieldCheck } from 'lucide-react';
 
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { accounts, backendConnected, balanceFor, money, signedMoney, postingTime, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { defaultFilters, selectAccounts, typeLabel } from './accountFilters.js';
 import RecordDrawer from '../../shared/components/RecordDrawer';
@@ -12,7 +12,14 @@ export default function Accounts() {
     try { return { ...defaultFilters, ...JSON.parse(sessionStorage.getItem('accounts-filters-v2') || '{}') }; }
     catch { return { ...defaultFilters }; }
   });
-  const [selected, setSelected] = useState(null);
+  const [params, setParams] = useSearchParams();
+  const selected = accounts.find(a => a.id === params.get('account')) || null;
+  const setSelected = account => {
+    const next = new URLSearchParams(params);
+    if (account) next.set('account', account.id);
+    else next.delete('account');
+    setParams(next, { replace: !account });
+  };
   useEffect(() => { try { sessionStorage.setItem('accounts-filters-v2', JSON.stringify(filters)); } catch {} }, [filters]);
   const balances = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, balanceFor(records, a)])), [records]);
   const balance = selected ? balances[selected.id] : null;
@@ -50,8 +57,8 @@ export default function Accounts() {
         <section aria-label="Account information"><h3 className="drawer-section-title">Account Information</h3><div className="account-customer"><span className="portal-icon"><Building2 size={24}/></span><div><h3>{selected.customer}</h3><p>{selected.customerRef} · Fictional customer</p></div></div><div className="account-identity-meta"><span>{selected.type} · {selected.currency}</span><span className={'account-status ' + selected.status.toLowerCase()}><i/>{selected.status}</span></div><dl className="account-facts account-information">{[['Account reference', selected.reference], ['Customer name', selected.customer], ['Customer reference', selected.customerRef], ['Customer type', typeLabel(selected.customerType)], ['Account type', typeLabel(selected.accountType)], ['Currency', selected.currency], ['Account status', selected.status]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
         <section className="account-balance" aria-label="Current balance summary"><span>Current balance</span><strong>{money(balance.current, selected.currency)}</strong><span className={balance.net < 0 ? 'movement-out' : 'movement-in'}>Net change since opening: {signedMoney(balance.net, selected.currency)}</span><small>Opening balance + posted credits − posted debits</small></section>
         <section><h3 className="drawer-section-title">Balance Breakdown</h3><dl className="account-facts">{[['Opening balance', money(selected.openingCents, selected.currency)], ['Posted credits', '+' + money(balance.credits, selected.currency)], ['Posted debits', '-' + money(balance.debits, selected.currency)], ['Current balance', money(balance.current, selected.currency)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></section>
-        <section className="posted-history"><h3 className="drawer-section-title">Posted Transaction History</h3><p className="history-caption">Newest first · Times in Singapore (SGT)</p>{balance.entries.length ? balance.entries.map(entry => <article className="posted-entry" key={entry.id}><div className="posted-entry-top"><strong>{entry.description}</strong><strong className={entry.side === 'Credit' ? 'movement-in' : 'movement-out'}>{signedMoney(entry.side === 'Credit' ? entry.amountCents : -entry.amountCents, entry.currency)}</strong></div><div className="posted-entry-links"><Link to={'/core-banking/journals?journal=' + encodeURIComponent(entry.journalId)}>{entry.journalId}</Link><span>·</span>{records.payment_transactions.some(p => p.id === entry.journal.paymentId) ? <Link to={'/payments/transactions?transaction=' + encodeURIComponent(entry.journal.paymentId)}>{entry.journal.paymentId}</Link> : <span>Payment unavailable</span>}</div><div className="posted-entry-meta"><time dateTime={entry.journal.postedAt}>{postingTime(entry.journal.postedAt)}</time><span>{entry.side} · {entry.journal.status}</span></div></article>) : <div className="account-empty"><h3>No posted transactions yet.</h3><p>Current balance equals opening balance because no posted ledger movements are connected to this account.</p></div>}</section>
-        <div className="account-demo"><ShieldCheck size={17}/><span>{backendConnected ? 'Read-only backend ledger snapshot.' : 'Shared local simulation, not backend ledger data.'} Only balanced, same-currency Posted journals affect balances. Draft, Pending, Failed and Reversed journals are excluded.</span></div>
+        <section className="posted-history"><h3 className="drawer-section-title">Posted Transaction History</h3><p className="history-caption">Newest first · Times in Singapore (SGT)</p>{balance.entries.length ? balance.entries.map(entry => <article className="posted-entry" key={entry.id}><div className="posted-entry-top"><strong>{entry.description}</strong><strong className={entry.side === 'Credit' ? 'movement-in' : 'movement-out'}>{signedMoney(entry.side === 'Credit' ? entry.amountCents : -entry.amountCents, entry.currency)}</strong></div><div className="posted-entry-links"><Link to={'/core-banking/journals?journal=' + encodeURIComponent(entry.journalId)}>{entry.journalId}</Link><span>·</span>{records.payment_transactions.some(p => p.id === entry.journal.paymentId) ? <Link to={'/payments/transactions?transaction=' + encodeURIComponent(entry.journal.paymentId)}>{entry.journal.paymentId}</Link> : <span>Payment unavailable</span>}</div><div className="posted-entry-meta"><time dateTime={entry.journal.postedAt}>{postingTime(entry.journal.postedAt)}</time><span>{entry.side} · {entry.journal.status}</span></div></article>) : <div className="account-empty"><h3>No posted transactions yet.</h3><p>Current balance equals the opening balance because no posted ledger entries exist for this account.</p></div>}</section>
+        <div className="account-demo"><ShieldCheck size={17}/><span>{backendConnected ? 'Read-only backend ledger snapshot.' : 'Shared local simulation, not backend ledger data.'} Only balanced, same-currency Posted journals affect balances. Draft, Pending and Failed journals are excluded. Posted reversal entries affect balances by their debit or credit direction.</span></div>
       </>}
     </RecordDrawer>
   </>;

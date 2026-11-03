@@ -57,7 +57,7 @@ test('journal and payment references open their matching existing drawers', asyn
   await page.getByRole('dialog').getByRole('link', { name: 'JRN-1002', exact: true }).click();
   await expect(page).toHaveURL(/core-banking\/journals\?journal=JRN-1002/);
   await expect(page.getByRole('dialog').getByRole('heading', { name: 'JRN-1002' })).toBeVisible();
-  await page.getByRole('dialog').getByRole('link', { name: 'TXN-1002', exact: true }).click();
+  await page.getByRole('dialog').getByRole('link', { name: 'Open Payment Transaction', exact: true }).click();
   await expect(page).toHaveURL(/payments\/transactions\?transaction=TXN-1002/);
   await expect(page.getByRole('dialog')).toContainText('SGD 3,500.00');
   await page.goto('/core-banking/journals?journal=DOES-NOT-EXIST');

@@ -4,6 +4,7 @@ import { ChevronRight, Search, ShieldCheck } from 'lucide-react';
 import { accounts, backendConnected, getSimulationNow, money, runPaymentDetection, advanceSimulationClock, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { filterPayments, paymentFilters, processingStatuses } from '../../shared/data/paymentSimulation.js';
 import CreatePaymentForm from './CreatePaymentForm.jsx';
+import CreateExceptionBatchForm from './CreateExceptionBatchForm.jsx';
 import TransactionDetailsDrawer, { StatusBadge, timestamp } from './TransactionDetailsDrawer.jsx';
 
 export default function TransactionsPage() {
@@ -15,6 +16,7 @@ export default function TransactionsPage() {
   });
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
+  const [creatingBatch, setCreatingBatch] = useState(false);
   const [demoRole, setDemoRole] = useState(() => sessionStorage.getItem('payment-demo-role') || 'ANALYST');
   const role = backendConnected ? records.role : demoRole;
   const [message, setMessage] = useState('');
@@ -37,7 +39,7 @@ export default function TransactionsPage() {
     finally { setBusy(false); }
   }
   return <>
-    <div className="payment-page-header"><div className="page-heading"><p className="eyebrow">PAYMENT OPERATIONS</p><h1>Transactions</h1><p>Monitor and manage synthetic payment transactions and processing outcomes.</p></div><button className="simulation-button" onClick={() => setCreating(true)}>Create Synthetic Payment</button></div>
+    <div className="payment-page-header"><div className="page-heading"><p className="eyebrow">PAYMENT OPERATIONS</p><h1>Transactions</h1><p>Monitor and manage synthetic payment transactions and processing outcomes.</p></div><div className="payment-header-actions">{backendConnected && role === 'ADMIN' && <button className="account-link" onClick={() => setCreatingBatch(true)}>Generate Exception Batch</button>}<button className="simulation-button" onClick={() => setCreating(true)}>Create Synthetic Payment</button></div></div>
     <div className="account-demo"><ShieldCheck size={15}/><span>{backendConnected ? `Connected synthetic database · Authenticated ${role} · Financial operations validated by the backend.` : 'Browser-only simulation · Records persist locally, not to PostgreSQL.'}</span></div>
     <section className="account-metrics" aria-label="Payment summary">{[
       ['Total Transactions', records.payment_transactions.length, 'All processing statuses'],
@@ -62,5 +64,12 @@ export default function TransactionsPage() {
     </section>
     <TransactionDetailsDrawer key={params.get('transaction') || 'closed'} id={params.get('transaction')} onClose={close}/>
     {creating && <CreatePaymentForm open role={role} onClose={() => setCreating(false)} onCreated={p => { setCreating(false); setMessage(`${p.id} saved as ${p.status}.`); open(p.id); }}/>}
+    {creatingBatch && <CreateExceptionBatchForm open
+      onClose={() => setCreatingBatch(false)}
+      onCreated={batch => {
+        setCreatingBatch(false);
+        setMessage(`${batch.created} exception payments generated automatically in batch ${batch.batchId}. Run detection when their reconciliation cutoffs are eligible.`);
+      }}
+    />}
   </>;
 }

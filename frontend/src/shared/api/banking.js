@@ -26,3 +26,14 @@ export async function paymentRequest(path, body) {
   if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : data.detail?.map(e => `${e.loc.at(-1)}: ${e.msg}`).join('; ') || 'Payment request failed.');
   return data;
 }
+
+export async function exceptionRequest(path, { method = 'GET', body } = {}) {
+  const base = import.meta.env.VITE_BANKING_API_URL;
+  const response = await fetch(`${base.replace(/\/$/, '')}${path}`, {
+    method, headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...authHeaders() },
+    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+  });
+  const data = await response.json();
+  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'Exception operation failed.');
+  return data;
+}

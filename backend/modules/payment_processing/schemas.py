@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, ConfigDict
 
 Scenario = Literal["NORMAL", "DUPLICATE", "PROCESSING_FAILURE", "MISSING_LEDGER", "AMOUNT_MISMATCH", "UNMATCHED"]
+ExceptionScenario = Literal["MISSING_LEDGER", "AMOUNT_MISMATCH", "DUPLICATE", "PROCESSING_FAILURE"]
 
 
 class PaymentRequest(BaseModel):
@@ -20,6 +21,12 @@ class ScenarioRequest(PaymentRequest):
     scenario_code: Scenario
 
 
+class ExceptionBatchRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    exception_types: list[ExceptionScenario] = Field(min_length=1, max_length=4)
+    count_per_type: int = Field(1, ge=1, le=10)
+
+
 class PaymentOut(BaseModel):
     id: str
     paymentId: UUID | None = None
@@ -29,7 +36,7 @@ class PaymentOut(BaseModel):
     receiver: dict | None = None
     amountCents: int
     currency: str
-    status: Literal["Pending", "Processing", "Completed", "Failed"]
+    status: Literal["Pending", "Processing", "Completed", "Failed", "Rejected"]
     createdAt: datetime
     completedAt: datetime | None = None
     failureCode: str | None = None

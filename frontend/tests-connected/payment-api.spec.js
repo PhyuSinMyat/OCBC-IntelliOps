@@ -7,6 +7,13 @@ test('authenticated browser creates backend payments and traces actual failure c
   await page.getByRole('button', { name: 'Connect to Demo Backend' }).click();
   await expect(page.getByRole('heading', { name: 'Transaction register' })).toBeVisible();
   await expect(page.getByText(/Authenticated ADMIN/)).toBeVisible();
+  await page.getByRole('button', { name: 'Generate Exception Batch' }).click();
+  await page.getByRole('checkbox', { name: /Duplicate Transaction/ }).uncheck();
+  await page.getByRole('checkbox', { name: /Payment Processing Failure/ }).uncheck();
+  await page.getByLabel('Payments per selected type').fill('2');
+  await expect(page.getByText('This batch will create')).toContainText('4 exception payments');
+  await page.getByRole('dialog').getByRole('button', { name: 'Generate Exception Batch', exact: true }).click();
+  await expect(page.getByRole('status')).toContainText('4 exception payments generated automatically');
   await page.getByRole('button', { name: 'Create Synthetic Payment', exact: true }).click();
   await page.getByLabel('Sender account', { exact: true }).selectOption('ACC-100003');
   await page.getByLabel('Receiver account', { exact: true }).selectOption('ACC-100001');
@@ -26,8 +33,7 @@ test('authenticated browser creates backend payments and traces actual failure c
   await page.getByLabel('Sender account', { exact: true }).selectOption('ACC-100003');
   await page.getByLabel('Receiver account', { exact: true }).selectOption('ACC-100001');
   await page.getByLabel('Amount', { exact: true }).fill('10.00');
-  await page.getByText('Advanced Simulation Options', { exact: true }).click();
-  await page.getByLabel('Simulation Scenario').selectOption('PROCESSING_FAILURE');
+  await page.getByLabel('Exception type').selectOption('PROCESSING_FAILURE');
   await page.getByRole('button', { name: 'Submit Synthetic Payment' }).click();
   await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toBeVisible();
   await expect(page.getByRole('dialog')).toContainText('SIM_PROCESSING_ERROR');
@@ -40,7 +46,13 @@ test('authenticated browser creates backend payments and traces actual failure c
   await page.getByRole('tab', { name: 'Related Records' }).click();
   await page.getByRole('link', { name: 'Open IntelliOps Case' }).click();
   await expect(page.getByRole('dialog')).toContainText('Payment Processing Failure');
+  await page.getByLabel('Review note').fill('Verified controlled retry prerequisites.');
+  await page.getByRole('button', { name: 'Retry Failed Payment' }).click();
+  await expect(page.getByRole('dialog')).toContainText('RESOLVED');
+  await expect(page.getByRole('dialog')).toContainText('retried successfully');
+  await page.getByRole('button', { name: 'Close Resolved Case' }).click();
+  await expect(page.getByRole('dialog')).toContainText('CLOSED');
   await page.goto('/core-banking/accounts');
-  await expect(page.locator('tbody tr').filter({ hasText: 'Alex Tan' })).toContainText('SGD 44,025.00');
+  await expect(page.locator('tbody tr').filter({ hasText: 'Alex Tan' })).toContainText('SGD 44,035.00');
   expect(reference).toMatch(/^TXN-/);
 });

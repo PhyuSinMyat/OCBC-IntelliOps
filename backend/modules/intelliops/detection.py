@@ -6,7 +6,7 @@ from modules.payment_processing.models import Transaction, PaymentInstruction
 from modules.payment_processing.service import simulation_now, aware, reconciliation_seconds
 from modules.core_banking.models import LedgerJournal, LedgerEntry, LedgerRecord
 from modules.core_banking.service import valid_journals
-from .models import ExceptionCase, AuditEvent, DetectionRule
+from .models import ExceptionCase, ExceptionCaseAction, AuditEvent, DetectionRule
 
 
 def detect(db, role, now=None):
@@ -17,7 +17,9 @@ def detect(db, role, now=None):
     entries = db.scalars(select(LedgerEntry)).all()
     valid = set(db.scalars(valid_journals()))
     legacy = db.scalars(select(LedgerRecord)).all()
-    active = {c.detection_key for c in db.scalars(select(ExceptionCase).where(ExceptionCase.status.not_in(["RESOLVED", "CLOSED"])))}
+    cases = db.scalars(select(ExceptionCase)).all()
+    active = {c.detection_key for c in cases if c.status not in ["RESOLVED", "CLOSED"]}
+    resolved = {c.detection_key for c in cases if c.status in ["RESOLVED", "CLOSED"]}
     rules = {r.exception_type: r for r in db.scalars(select(DetectionRule))}
     first_references, created = {}, []
     for tx, instruction in payments:
@@ -33,13 +35,16 @@ def detect(db, role, now=None):
         if tx.status == "COMPLETED" and now >= cutoff:
             if not linked and not old_postings:
                 conditions.append(("Missing Ledger Posting", "HIGH", {"cutoff": cutoff.isoformat(), "journalReferences": []}))
+            matched_valid = []
             for journal in linked:
                 if journal.payment_reference != tx.reference:
                     conditions.append(("Unmatched Transaction", "MEDIUM", {"journalReference": journal.journal_ref, "actualReference": journal.payment_reference, "expectedReference": tx.reference, "cutoff": cutoff.isoformat()}))
                 elif journal.journal_id in valid:
-                    debit = sum((e.amount for e in entries if e.journal_id == journal.journal_id and e.side == "Debit"), Decimal(0))
-                    if debit != tx.amount:
-                        conditions.append(("Amount Mismatch", "HIGH", {"journalReference": journal.journal_ref, "expectedAmount": str(tx.amount), "postedAmount": str(debit)}))
+                    matched_valid.append(journal)
+            if matched_valid:
+                debit = sum((e.amount for e in entries if e.journal_id in {j.journal_id for j in matched_valid} and e.side == "Debit"), Decimal(0))
+                if debit != tx.amount:
+                    conditions.append(("Amount Mismatch", "HIGH", {"journalReferences": [j.journal_ref for j in matched_valid], "expectedAmount": str(tx.amount), "postedAmount": str(debit)}))
             if old_postings and sum((e.amount for e in old_postings), Decimal(0)) != tx.amount:
                 conditions.append(("Amount Mismatch", "HIGH", {"legacyLedgerIds": [e.id for e in old_postings], "expectedAmount": str(tx.amount)}))
         for kind, severity, evidence in conditions:
@@ -47,12 +52,14 @@ def detect(db, role, now=None):
             if rule and not rule.enabled:
                 continue
             key = f"{tx.id}:{kind}"
-            if key in active:
+            if key in active or key in resolved:
                 continue
             case = ExceptionCase(transaction_id=tx.id, rule_id=rule.id if rule else None, exception_type=kind, severity=severity, status="OPEN", detection_key=key,
                 evidence={"transactionReference": tx.reference, "observedAt": now.isoformat(), **evidence}, created_at=now)
             db.add(case)
             db.flush()
+            db.add(ExceptionCaseAction(exception_id=case.id, action_type="DETECTED", actor=role,
+                                       details=case.evidence, created_at=now))
             active.add(key)
             created.append(case.id)
             db.add(AuditEvent(action="EXCEPTION_DETECTED", actor=role, reference=f"CASE-{case.id:06d}",
@@ -67,5 +74,6 @@ def case_dtos(db, transaction_id=None):
     if transaction_id is not None:
         query = query.where(ExceptionCase.transaction_id == transaction_id)
     return [dict(id=f"CASE-{c.id:06d}", transactionId=reference, exceptionType=c.exception_type,
-                 severity=c.severity, status=c.status, evidence=c.evidence or {}, createdAt=aware(c.created_at))
+                 severity=c.severity, status=c.status, evidence=c.evidence or {}, createdAt=aware(c.created_at),
+                 updatedAt=aware(c.updated_at), resolvedAt=aware(c.resolved_at), resolutionSummary=c.resolution_summary)
             for c, reference in db.execute(query.order_by(ExceptionCase.id.desc()))]

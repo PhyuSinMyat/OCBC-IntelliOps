@@ -1,7 +1,7 @@
 import { accounts, addTransfer, balanceFor, validJournal } from './bankingRecords.js';
 
 export const scenarios = { NORMAL: 'Normal Payment', DUPLICATE: 'Duplicate Transaction', PROCESSING_FAILURE: 'Payment Processing Failure', MISSING_LEDGER: 'Missing Ledger Posting', AMOUNT_MISMATCH: 'Amount Mismatch', UNMATCHED: 'Unmatched Transaction' };
-export const processingStatuses = ['Pending', 'Processing', 'Completed', 'Failed'];
+export const processingStatuses = ['Pending', 'Processing', 'Completed', 'Failed', 'Rejected'];
 export function parseAmount(value) {
   if (!/^\d+(\.\d{1,2})?$/.test(String(value))) throw new Error('Amount must be positive with at most two decimal places.');
   const [whole, fraction = ''] = String(value).split('.');

@@ -1,7 +1,7 @@
 ﻿import { useSyncExternalStore } from 'react';
 
 import { processPayment, detectPayments, nextReference } from './paymentSimulation.js';
-import { paymentRequest, fetchBankingSnapshot } from '../api/banking.js';
+import { paymentRequest, exceptionRequest, fetchBankingSnapshot } from '../api/banking.js';
 
 export const customers = [
   ['CUS-001', 'Alex Tan', 'INDIVIDUAL'], ['CUS-002', 'Maya Lim', 'INDIVIDUAL'], ['CUS-003', 'Northstar Trading Pte Ltd', 'BUSINESS'],
@@ -99,6 +99,14 @@ export async function createSyntheticPayment(input, role = 'ANALYST') {
   save(result.state);
   return result.payment;
 }
+export async function createExceptionBatch(exceptionTypes, countPerType) {
+  if (!backendConnected) throw new Error('Automatic exception batches require the connected backend.');
+  const result = await paymentRequest('/api/demo/exception-batches', {
+    exception_types: exceptionTypes, count_per_type: countPerType,
+  });
+  await refreshBackend();
+  return result;
+}
 export async function refreshBackend() {
   loadBackendSnapshot(await fetchBankingSnapshot(import.meta.env.VITE_BANKING_API_URL));
 }
@@ -112,6 +120,30 @@ export async function runPaymentDetection(role = 'ANALYST') {
   const count = next.exception_cases.length - (state.exception_cases || []).length;
   save(next);
   return count;
+}
+export async function fetchExceptionCase(caseId) {
+  if (!backendConnected) return state.exception_cases.find(item => item.id === caseId) || null;
+  return exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}`);
+}
+export async function addExceptionNote(caseId, note) {
+  if (!backendConnected) throw new Error('Case lifecycle actions require the connected backend.');
+  const result = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}/notes`, { method: 'POST', body: { note } });
+  await refreshBackend();
+  return result;
+}
+export async function remediateException(caseId, note) {
+  if (!backendConnected) throw new Error('Case resolution requires the connected backend.');
+  const result = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}/remediate`, { method: 'POST', body: {
+    idempotency_key: `case-resolution-${caseId}-${crypto.randomUUID()}`, note: note || null,
+  } });
+  await refreshBackend();
+  return result;
+}
+export async function closeException(caseId, note) {
+  if (!backendConnected) throw new Error('Case closure requires the connected backend.');
+  const result = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}/close`, { method: 'POST', body: { note: note || null } });
+  await refreshBackend();
+  return result;
 }
 export function advanceSimulationClock(role) {
   if (backendConnected || role !== 'ADMIN') throw new Error('Clock advance is available only to the local ADMIN demo role.');

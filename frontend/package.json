@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node --test src/shared/data/bankingRecords.test.js src/portals/core-banking/accountFilters.test.js src/shared/api/banking.test.js src/shared/data/paymentSimulation.test.js",
+    "test": "node --test src/shared/data/bankingRecords.test.js src/portals/core-banking/accountFilters.test.js src/shared/api/banking.test.js src/shared/data/paymentSimulation.test.js src/portals/intelliops/investigation/analysis.test.js",
     "test:e2e": "playwright test",
     "test:connected": "playwright test --config playwright.connected.config.js"
   },

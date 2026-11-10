@@ -65,6 +65,13 @@ export function restoreRecords(storage) {
 let state;
 try { state = restoreRecords(globalThis.localStorage); } catch { state = initialRecords(); }
 const listeners = new Set();
+globalThis.addEventListener?.('storage', event => {
+  if (backendConnected || (event.key !== STORAGE_KEY && event.key !== null)) return;
+  try {
+    state = restoreRecords(globalThis.localStorage);
+    listeners.forEach(fn => fn());
+  } catch { /* Retain the last valid snapshot. */ }
+});
 export let backendConnected = false;
 export function loadBackendSnapshot(snapshot) {
   customers.splice(0, customers.length, ...snapshot.customers);

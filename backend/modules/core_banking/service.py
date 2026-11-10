@@ -1,7 +1,7 @@
 """Read-only ledger summaries and controlled ownership validation.
 
-Reversed journals use the existing simulator's exclusion semantics. A missing
-payment or a payment/journal amount mismatch never causes a journal repair.
+Posted reversal journals contribute their actual debit/credit direction.
+Historical demonstration records are never repaired.
 """
 from decimal import Decimal
 from sqlalchemy import select, func, case, and_
@@ -48,6 +48,43 @@ def account_query():
              .join(Customer, Customer.customer_id == Account.customer_id)
              .outerjoin(totals, totals.c.account_id == Account.account_id))
     return query, current
+
+
+def post_normal_journal(db, journal, transaction, sender, receiver, now):
+    """Validate persisted movements before the atomic payment can complete."""
+    if journal.status != "Draft" or journal.posted_at is not None:
+        raise ValueError("Journal is not an unposted Draft.")
+    if (journal.source_transaction_id != transaction.id or journal.normal_transaction_id != transaction.id
+            or journal.payment_reference != transaction.reference):
+        raise ValueError("Journal payment reference is inconsistent.")
+    other = db.scalar(select(LedgerJournal.journal_id).where(
+        LedgerJournal.source_transaction_id == transaction.id,
+        LedgerJournal.journal_id != journal.journal_id))
+    if other is not None:
+        raise ValueError("Payment already has a posting journal.")
+    entries = db.scalars(select(LedgerEntry).where(LedgerEntry.journal_id == journal.journal_id)).all()
+    if len(entries) != 2 or {(e.account_id, e.side) for e in entries} != {
+            (sender.account_id, "Debit"), (receiver.account_id, "Credit")}:
+        raise ValueError("Normal posting requires one sender debit and one receiver credit.")
+    for entry in entries:
+        account = db.get(Account, entry.account_id)
+        if (account is None or account.currency != journal.currency or entry.currency != journal.currency
+                or journal.currency != transaction.currency or not entry.posted
+                or not entry.amount.is_finite() or entry.amount <= 0
+                or entry.amount != entry.amount.quantize(Decimal("0.01"))
+                or entry.amount != transaction.amount):
+            raise ValueError("Invalid journal amount, currency or account.")
+    if sum(e.amount for e in entries if e.side == "Debit") != sum(e.amount for e in entries if e.side == "Credit"):
+        raise ValueError("Journal is unbalanced.")
+    journal.status, journal.posted_at = "Posted", now
+
+
+def account_balance(db, account_id):
+    query, _ = account_query()
+    row = db.execute(query.where(Account.account_id == account_id)).first()
+    if row is None:
+        raise ValueError("Account not found.")
+    return serialize_account(row)["balance"]
 
 
 def serialize_account(row):

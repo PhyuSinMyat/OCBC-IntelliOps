@@ -7,7 +7,7 @@ from uuid import uuid4
 from sqlalchemy import select, or_
 from .models import Transaction, ProcessingEvent, PaymentInstruction
 from modules.core_banking.models import Account, Customer, LedgerJournal, LedgerEntry
-from modules.core_banking.service import account_query
+from modules.core_banking.service import account_balance, post_normal_journal
 from modules.intelliops.models import AuditEvent
 
 
@@ -68,8 +68,7 @@ def create_payment(db, request, role, scenario="NORMAL", now=None):
         raise PaymentError("Both accounts must be Active; Frozen and Closed accounts cannot transfer.")
     if sender.currency != receiver.currency or (request.currency and request.currency != sender.currency):
         raise PaymentError("Only same-currency transfers matching the account currency are supported.")
-    query, _ = account_query()
-    current = db.execute(query.where(Account.account_id == sender.account_id)).one().current
+    current = account_balance(db, sender.account_id)["current_balance"]
     if current < request.amount:
         raise PaymentError("Sender has insufficient available funds.")
     if scenario == "AMOUNT_MISMATCH" and request.amount < Decimal("0.02"):
@@ -104,6 +103,7 @@ def create_payment(db, request, role, scenario="NORMAL", now=None):
         if code != "MISSING_LEDGER":
             posted_amount = request.amount - Decimal("0.01") if code == "AMOUNT_MISMATCH" else request.amount
             journal = LedgerJournal(journal_ref=f"JRN-{suffix}", source_transaction_id=tx.id,
+                normal_transaction_id=tx.id if code == "NORMAL" else None,
                 payment_reference=f"UNMATCHED-{suffix}" if code == "UNMATCHED" else tx.reference,
                 currency=sender.currency, status="Draft", posted_at=None)
             db.add(journal)
@@ -113,7 +113,10 @@ def create_payment(db, request, role, scenario="NORMAL", now=None):
                     account_id=account.account_id, side=side, amount=posted_amount, currency=sender.currency,
                     description="Outgoing transfer" if side == "Debit" else "Incoming transfer", posted=True))
             db.flush()
-            journal.status, journal.posted_at = "Posted", now
+            if code == "NORMAL":
+                post_normal_journal(db, journal, tx, sender, receiver, now)
+            else:
+                journal.status, journal.posted_at = "Posted", now
             event(db, tx, "LEDGER_POSTED", "PROCESSING", f"Balanced posting recorded in {journal.journal_ref}.", now)
         tx.status, instruction.completed_at = "COMPLETED", now
         event(db, tx, "PROCESSING_COMPLETED", "COMPLETED", "Payment source reports completion." if code == "MISSING_LEDGER" else "Synthetic processing completed.", now)
@@ -136,6 +139,8 @@ def payment_rows(db):
 
 def payment_dtos(db, rows=None):
     # Constant query count: all parties are loaded in one join, never per payment.
+    journals = {j.source_transaction_id: j.journal_ref for j in db.scalars(
+        select(LedgerJournal).where(LedgerJournal.normal_transaction_id.is_not(None)))}
     parties = {a.account_id: dict(id=a.account_ref, customer=c.customer_name, customerRef=c.customer_ref,
                                 customerType=c.customer_type, accountType=a.account_type)
                for a, c in db.execute(select(Account, Customer).join(Customer, Customer.customer_id == Account.customer_id))}
@@ -143,7 +148,7 @@ def payment_dtos(db, rows=None):
     for tx, instruction in rows if rows is not None else payment_rows(db):
         sender = parties.get(instruction.sender_account_id) if instruction else None
         receiver = parties.get(instruction.receiver_account_id) if instruction else None
-        result.append(dict(id=tx.reference, paymentId=str(instruction.payment_id) if instruction else None,
+        result.append(dict(id=tx.reference, journalReference=journals.get(tx.id), paymentId=str(instruction.payment_id) if instruction else None,
             senderId=sender["id"] if sender else None, receiverId=receiver["id"] if receiver else None,
             sender=sender, receiver=receiver, amountCents=int(tx.amount*100), currency=tx.currency,
             status=tx.status.title(), createdAt=aware(tx.created_at), completedAt=aware(instruction.completed_at) if instruction else None,

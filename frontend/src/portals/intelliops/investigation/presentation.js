@@ -1,0 +1,83 @@
+// Presentation derived from the saved report. No new financial or cause inference.
+export function resultSummary(report) {
+  const same = report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST';
+  const separate = report.diagnosis_classification === 'LEGITIMATE_SEPARATE_INSTRUCTIONS';
+  const timeout = report.root_cause_code === 'CLIENT_RETRY_ACK_TIMEOUT';
+  const idempotency = report.root_cause_code === 'IDEMPOTENCY_CONTROL_FAILURE';
+  const identified = timeout || separate || idempotency;
+  const f = report.financial_execution_assessment;
+  const financial = {
+    SINGLE_POSTING_CONFIRMED: ['One posting confirmed', 'Original posted; repeated request held before execution.', 'positive'],
+    DOUBLE_POSTING_CONFIRMED: [same ? 'Duplicate execution confirmed' : 'Two postings confirmed', separate ? 'Two distinct instructions with verified postings.' : 'Two distinct posted journals. Human review required.', separate ? 'neutral' : 'danger'],
+    NO_POSTING_CONFIRMED: ['No posting confirmed', 'Both requests are recorded as held before execution.', 'neutral'],
+    EXECUTION_OUTCOME_UNKNOWN: ['Execution outcome unknown', 'Missing evidence prevents full financial verification.', 'caution'],
+  }[f.classification] || ['Execution outcome unknown', 'Financial verification is incomplete.', 'caution'];
+  const a = report.supporting_evidence.original, b = report.supporting_evidence.duplicate;
+  const shared = a?.businessReference && a.businessReference === b?.businessReference ? a.businessReference : null;
+  return {
+    identified, same, separate, timeout,
+    explanation: idempotency ? report.root_cause_explanation : timeout ? 'Correlated timeout and retry events link the repeated request to the same payment instruction.' : separate ?
+      'Verified business references establish separate intended instructions despite similar payment details.' : same ?
+        'The requests share the same intended instruction. Available events do not establish why it was submitted again.' :
+        'The available records do not establish the intended relationship or underlying cause.',
+    relationship: [same ? 'Same intended instruction' : separate ? 'Different instructions' : 'Relationship unverified',
+      same ? shared ? `Both requests share ${shared}.` : 'Source original-payment link and payment attributes agree.' : separate ? 'Two separately verified business references.' : 'Additional instruction evidence is needed.', same ? 'positive' : separate ? 'neutral' : 'caution'],
+    cause: [idempotency ? 'Idempotency control failure' : timeout ? 'Acknowledgment timeout' : separate ? 'Legitimate repeated payments' : 'Root cause unknown',
+      idempotency ? 'The structured diagnosis identifies a control failure.' : timeout ? 'A correlated retry follows the timeout.' : separate ? 'Separate instructions explain the similarity.' : 'No evidence establishes the submission trigger.', identified ? 'neutral' : 'caution'],
+    financial,
+  };
+}
+
+const stageNames = {
+  PAYMENT_CREATED: 'Request received', VALIDATION_STARTED: 'Validation started', VALIDATION_PASSED: 'Validation passed',
+  PROCESSING_STARTED: 'Processing started', LEDGER_POSTED: 'Ledger posting recorded', PROCESSING_COMPLETED: 'Payment completed',
+  ACK_TIMEOUT: 'Acknowledgment timeout', RETRY_SUBMITTED: 'Retry request submitted', DUPLICATE_BLOCKED: 'Duplicate request held',
+  PROCESSING_FAILED: 'Processing failed',
+};
+export const eventLabel = type => stageNames[type] || String(type || 'Source event').replaceAll('_', ' ').toLowerCase();
+
+export function eventContext(report, event) {
+  const payment = report.payment_comparison.find(p => p?.id === event.paymentId);
+  const f = report.financial_execution_assessment;
+  const assessment = event.paymentId === f.original.payment_ref ? f.original : event.paymentId === f.duplicate.payment_ref ? f.duplicate : null;
+  return { node: { kind: 'event', event, title: eventLabel(event.eventType), at: event.occurredAt,
+    journalRefs: event.eventType === 'LEDGER_POSTED' ? assessment?.valid_journals || [] : [] }, payment, report };
+}
+
+export function paymentPath(report, side) {
+  const s = report.supporting_evidence;
+  const payment = side === 'original' ? s.original : s.duplicate;
+  const assessment = report.financial_execution_assessment[side];
+  const events = s.events.filter(e => e.paymentId === payment?.id);
+  const validJournals = s.journals.filter(j => assessment.valid_journals.includes(j.id));
+  const nodes = events.map(e => ({ id: `event:${e.id}`, kind: 'event', event: e, title: eventLabel(e.eventType),
+    at: e.occurredAt, journalRefs: e.eventType === 'LEDGER_POSTED' ? validJournals.map(j => j.id) : [],
+    tone: ['ACK_TIMEOUT', 'DUPLICATE_BLOCKED'].includes(e.eventType) ? 'caution' : e.eventType === 'PROCESSING_FAILED' ? 'danger' : 'neutral' }));
+  // A journal may exist without a processing event. Show it as ledger evidence,
+  // not as an invented payment-processing stage.
+  for (const j of validJournals) if (!events.some(e => e.eventType === 'LEDGER_POSTED')) nodes.push({
+    id: `journal:${j.id}`, kind: 'journal', journal: j, title: 'Posted journal verified', at: j.postedAt, journalRefs: [j.id], tone: 'positive',
+  });
+  nodes.sort((a, b) => (Date.parse(a.at) || 0) - (Date.parse(b.at) || 0));
+  // Execution assessment is an explicit diagnostic check, not a synthetic event.
+  nodes.push({ id: `assessment:${side}`, kind: 'assessment', title: assessment.execution === 'Posted' ? 'Financial posting verified' :
+    assessment.execution === 'Not Started' ? 'No financial posting started' : 'Execution not fully verified',
+    assessment, journalRefs: assessment.valid_journals, tone: assessment.execution === 'Unknown' ? 'caution' : assessment.execution === 'Not Started' ? 'caution' : 'positive' });
+  return { payment, nodes, assessment };
+}
+
+export function causalEvents(report) {
+  const events = report.investigation_trace;
+  const s = report.supporting_evidence;
+  const result = [];
+  const add = event => { if (event && !result.some(e => e.id === event.id)) result.push(event); };
+  add(events.find(e => e.paymentId === s.original?.id && e.eventType === 'PAYMENT_CREATED'));
+  add(events.find(e => e.paymentId === s.original?.id && e.eventType === 'LEDGER_POSTED'));
+  if (report.root_cause_code === 'CLIENT_RETRY_ACK_TIMEOUT') {
+    const timeout = events.find(e => e.paymentId === s.original?.id && e.eventType === 'ACK_TIMEOUT' && e.correlationId);
+    add(timeout);
+    add(events.find(e => e.paymentId === s.duplicate?.id && e.eventType === 'RETRY_SUBMITTED' && e.correlationId === timeout?.correlationId && Date.parse(e.occurredAt) >= Date.parse(timeout?.occurredAt)));
+  } else add(events.find(e => e.paymentId === s.duplicate?.id && e.eventType === 'PAYMENT_CREATED'));
+  add(events.find(e => e.paymentId === s.duplicate?.id && ['DUPLICATE_BLOCKED', 'LEDGER_POSTED'].includes(e.eventType)));
+  return result.sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+}

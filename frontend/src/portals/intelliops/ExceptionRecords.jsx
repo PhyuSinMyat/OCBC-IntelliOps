@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import RecordDrawer from '../../shared/components/RecordDrawer.jsx';
 import { backendConnected, postingTime, runPaymentDetection, useBankingRecords } from '../../shared/data/bankingRecords.js';
 
 export default function ExceptionRecords({ investigation = false, audit = false }) {
   const records = useBankingRecords();
+  const location = useLocation();
   const [params, setParams] = useSearchParams();
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
@@ -27,7 +28,7 @@ export default function ExceptionRecords({ investigation = false, audit = false 
       <h3 className="drawer-section-title">Source evidence</h3><dl className="account-facts evidence-facts">{Object.entries(selected.evidence).map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd></div>)}</dl>
       <p><Link className="account-link" to={'/payments/transactions?transaction=' + encodeURIComponent(selected.transactionId)}>Open Payment Transaction</Link></p>
       {selected.evidence.journalReference && records.ledger_journals.some(j => j.id === selected.evidence.journalReference) && <p><Link className="account-link" to={'/core-banking/journals?journal=' + encodeURIComponent(selected.evidence.journalReference)}>Open Ledger Journal</Link></p>}
-      {!investigation && <p><Link className="account-link" to={'/intelliops/investigation?case=' + encodeURIComponent(selected.id)}>Investigate Evidence</Link></p>}
+      {!investigation && <p><Link className="account-link" state={{ from: location.pathname + location.search }} to={'/intelliops/investigation?case=' + encodeURIComponent(selected.id)}>Open Investigation</Link></p>}
       <p className="history-caption">This case remains open. Detection does not execute a correction or mark it resolved.</p>
     </> : <p>This case is unavailable in the current source dataset.</p>}</RecordDrawer>}
   </>;

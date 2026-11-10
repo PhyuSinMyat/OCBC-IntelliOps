@@ -61,7 +61,10 @@ test('all source scenarios trace through detection, cases, investigation and aud
   await page.getByRole('link', { name: 'Open IntelliOps Case' }).click();
   await expect(page.getByRole('dialog')).toContainText('Missing Ledger Posting');
   await expect(page.getByRole('dialog')).toContainText('OPEN');
-  await page.getByRole('link', { name: 'Investigate Evidence' }).click();
+  await page.getByRole('link', { name: 'Open Investigation' }).click();
+  await expect(page.getByRole('heading', { name: 'AI Investigation', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Investigation not yet supported' })).toBeVisible();
+  await page.getByRole('link', { name: 'View Case Details', exact: true }).first().click();
   await expect(page.getByRole('dialog')).toContainText('Source evidence');
   await page.goto('/intelliops/audit');
   await expect(page.locator('tbody')).toContainText('SCENARIO_INJECTED');

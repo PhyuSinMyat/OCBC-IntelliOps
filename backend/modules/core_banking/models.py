@@ -60,6 +60,8 @@ class LedgerJournal(Base):
     __tablename__ = "ledger_journals"
     journal_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     journal_ref: Mapped[str] = mapped_column(String(50), unique=True)
+    normal_transaction_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id"), unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
     # Nullable: unmatched journals remain visible; no payment is fabricated.
     payment_reference: Mapped[str | None] = mapped_column(String(100), index=True)
     source_transaction_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id"), index=True)

@@ -22,6 +22,7 @@ class ScenarioRequest(PaymentRequest):
 
 class PaymentOut(BaseModel):
     id: str
+    journalReference: str | None = None
     paymentId: UUID | None = None
     senderId: str | None = None
     receiverId: str | None = None

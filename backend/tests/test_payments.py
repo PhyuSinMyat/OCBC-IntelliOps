@@ -72,6 +72,49 @@ class PaymentTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count()).select_from(Transaction)), 2)
             self.assertEqual(db.scalar(select(func.count()).select_from(LedgerJournal)), 2)
 
+    def test_normal_transfer_balances_history_and_journal_api(self):
+        sender = "ACC-100003"
+        receiver = "ACC-100002"
+        before_sender, before_receiver = self.balance(sender), self.balance(receiver)
+        openings = {ref: self.client.get(f"/api/accounts/{demo_id(ref)}").json()["balance"]["opening_balance"]
+                    for ref in [sender, receiver]}
+        payment = self.post(receiver_account_ref=receiver, amount="5000.00")
+        self.assertEqual(self.balance(sender), before_sender - Decimal("5000"))
+        self.assertEqual(self.balance(receiver), before_receiver + Decimal("5000"))
+        related = self.client.get(f"/api/payments/{payment['id']}/related").json()["journals"]
+        self.assertEqual(len(related), 1)
+        response = self.client.get(f"/api/ledger/journals/{related[0]['id']}")
+        self.assertEqual(response.status_code, 200, response.text)
+        journal = response.json()
+        self.assertEqual(journal["payment_reference"], payment["id"])
+        self.assertTrue(journal["payment_available"])
+        self.assertEqual(journal["status"], "Posted")
+        self.assertEqual(len(journal["entries"]), 2)
+        self.assertEqual(Decimal(journal["total_debit"]), Decimal("5000"))
+        self.assertEqual(journal["total_debit"], journal["total_credit"])
+        self.assertEqual(self.client.get(f"/api/ledger/journals/{journal['journal_id']}").json(), journal)
+        for ref, side in [(sender, "Debit"), (receiver, "Credit")]:
+            detail = self.client.get(f"/api/accounts/{demo_id(ref)}").json()
+            self.assertEqual(detail["balance"]["opening_balance"], openings[ref])
+            entries = self.client.get(f"/api/accounts/{demo_id(ref)}/ledger-entries").json()
+            matching = [e for e in entries if e["payment_reference"] == payment["id"]]
+            self.assertEqual(len(matching), 1)
+            self.assertEqual(matching[0]["side"], side)
+        self.assertEqual(self.client.get("/api/ledger/journals/missing").status_code, 404)
+
+    def test_posting_validation_failure_rolls_back_all_financial_changes(self):
+        before = self.balance()
+        with patch("modules.payment_processing.service.post_normal_journal", side_effect=ValueError("Unbalanced journal")):
+            response = self.client.post("/api/payments", json=self.request())
+        self.assertEqual(response.status_code, 422, response.text)
+        self.assertEqual(self.balance(), before)
+        with Session(self.engine) as db:
+            self.assertEqual(db.scalar(select(func.count()).select_from(Transaction)), 2)
+            self.assertEqual(db.scalar(select(func.count()).select_from(LedgerJournal)), 2)
+            self.assertEqual(db.scalar(select(func.count()).select_from(PaymentInstruction)), 0)
+            outcome = db.scalar(select(AuditEvent).where(AuditEvent.action == "PAYMENT_POSTING_FAILED"))
+            self.assertTrue(outcome.details["financialChangesRolledBack"])
+
     def test_read_search_filters_pagination_dates_and_details(self):
         payment = self.post()
         for query in [payment["id"], "Northstar", "ACC-100003", "Alex"]:

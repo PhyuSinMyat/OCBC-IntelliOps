@@ -58,3 +58,27 @@ class EntryOut(BaseModel):
     amount: Decimal
     signed_amount: Decimal
     currency: str
+
+
+class JournalEntryOut(BaseModel):
+    entry_id: UUID
+    entry_ref: str
+    account_ref: str
+    side: Literal["Debit", "Credit"]
+    amount: Decimal
+    currency: str
+    description: str
+
+
+class JournalOut(BaseModel):
+    journal_id: UUID
+    journal_ref: str
+    payment_reference: str | None
+    payment_available: bool
+    status: str
+    currency: str
+    created_at: datetime
+    posted_at: datetime | None
+    total_debit: Decimal
+    total_credit: Decimal
+    entries: list[JournalEntryOut]

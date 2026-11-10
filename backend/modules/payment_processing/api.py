@@ -69,6 +69,13 @@ def submit(db, request, role, scenario):
         if not existing or existing.request_fingerprint != fingerprint(request, scenario):
             raise HTTPException(409, "Conflicting or concurrent payment submission. Retry with the same key.")
         reference = db.get(Transaction, existing.transaction_id).reference
+    except ValueError as error:
+        db.rollback()
+        with db.begin():
+            db.add(AuditEvent(action="PAYMENT_POSTING_FAILED", actor=role,
+                reference=request.idempotency_key,
+                details={"reason": str(error), "financialChangesRolledBack": True}))
+        raise HTTPException(422, "Ledger posting failed; financial changes were rolled back.") from error
     return payment_dtos(db, [lookup(db, reference)])[0]
 
 

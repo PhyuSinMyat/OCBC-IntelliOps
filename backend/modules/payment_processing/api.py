@@ -10,8 +10,9 @@ from modules.core_banking.models import Account, Customer, LedgerJournal, Ledger
 from modules.intelliops.models import AuditEvent
 from modules.intelliops.detection import detect, case_dtos
 from .models import Transaction, PaymentInstruction, ProcessingEvent
-from .schemas import PaymentRequest, ScenarioRequest, PaymentOut, PaymentPage, EventOut, RelatedOut
+from .schemas import PaymentRequest, ScenarioRequest, ExceptionBatchRequest, PaymentOut, PaymentPage, EventOut, RelatedOut
 from .service import create_payment, payment_dtos, find_payment, PaymentError, aware, fingerprint
+from .batch import create_exception_batch
 
 router = APIRouter(prefix="/api", tags=["Payments"])
 
@@ -25,7 +26,7 @@ def lookup(db, reference):
 
 @router.get("/payments", response_model=PaymentPage)
 def list_payments(search: str = Query("", max_length=200),
-                  status: Literal["PENDING", "PROCESSING", "COMPLETED", "FAILED"] | None = None,
+                  status: Literal["PENDING", "PROCESSING", "COMPLETED", "FAILED", "REJECTED"] | None = None,
                   currency: str | None = Query(None, pattern=r"^[A-Z]{3}$"),
                   date_from: datetime | None = None, date_to: datetime | None = None,
                   sort: Literal["newest", "oldest", "amount-high", "amount-low", "status", "reference"] = "newest",
@@ -87,6 +88,19 @@ def post_payment(request: PaymentRequest, db=Depends(get_db), role=Depends(actor
 @router.post("/demo/payments/scenario", response_model=PaymentOut, status_code=201)
 def post_scenario(request: ScenarioRequest, db=Depends(get_db), role=Depends(administrator)):
     return submit(db, request, role, request.scenario_code)
+
+
+@router.post("/demo/exception-batches", status_code=201)
+def post_exception_batch(request: ExceptionBatchRequest, db=Depends(get_db), role=Depends(administrator)):
+    try:
+        with db.begin():
+            batch, transactions = create_exception_batch(db, request, role)
+            references = [tx.reference for tx in transactions]
+        return {"batchId": str(batch.batch_id), "status": batch.status, "created": len(references),
+                "exceptionTypes": batch.requested_scenarios, "countPerType": batch.count_per_type,
+                "transactionReferences": references}
+    except PaymentError as error:
+        raise HTTPException(error.status, str(error)) from error
 
 
 @router.get("/payments/{payment_id}", response_model=PaymentOut)

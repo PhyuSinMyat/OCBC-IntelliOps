@@ -6,10 +6,7 @@ async function fillPayment(page, scenario = 'NORMAL', amount = '100.00') {
   await form.getByLabel('Sender account', { exact: true }).selectOption('ACC-100003');
   await form.getByLabel('Receiver account', { exact: true }).selectOption('ACC-100001');
   await form.getByLabel('Amount', { exact: true }).fill(amount);
-  if (scenario !== 'NORMAL') {
-    await form.getByText('Advanced Simulation Options', { exact: true }).click();
-    await form.getByLabel('Simulation Scenario').selectOption(scenario);
-  }
+  if (scenario !== 'NORMAL') await form.getByLabel('Exception type').selectOption(scenario);
 }
 
 test('normal payment validates fields and records actual history and balanced journal', async ({ page }) => {
@@ -36,8 +33,15 @@ test('normal payment validates fields and records actual history and balanced jo
 test('all source scenarios trace through detection, cases, investigation and audit without repairs', async ({ page }) => {
   await page.goto('/payments/transactions');
   await page.getByLabel('Local demo role').selectOption('ADMIN');
+  await page.getByRole('button', { name: 'Create Synthetic Payment', exact: true }).click();
+  await expect(page.getByLabel('Exception type')).toBeVisible();
+  await expect(page.getByLabel('Exception type').locator('option')).toHaveText([
+    'No exception (Normal Payment)', 'Missing Ledger Posting', 'Amount Mismatch',
+    'Duplicate Transaction', 'Payment Processing Failure',
+  ]);
+  await page.getByRole('button', { name: 'Cancel' }).click();
   let missingReference;
-  for (const scenario of ['DUPLICATE', 'PROCESSING_FAILURE', 'MISSING_LEDGER', 'AMOUNT_MISMATCH', 'UNMATCHED']) {
+  for (const scenario of ['DUPLICATE', 'PROCESSING_FAILURE', 'MISSING_LEDGER', 'AMOUNT_MISMATCH']) {
     await fillPayment(page, scenario);
     await page.getByRole('button', { name: 'Submit Synthetic Payment' }).click();
     await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toBeVisible();
@@ -52,7 +56,7 @@ test('all source scenarios trace through detection, cases, investigation and aud
   }
   await page.getByRole('button', { name: 'Advance Local Clock +61s' }).click();
   await page.getByRole('button', { name: 'Run Detection', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('5 new cases');
+  await expect(page.getByRole('status')).toContainText('4 new cases');
   await page.getByRole('button', { name: 'Run Detection', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('0 new cases');
   await page.goto('/payments/transactions?transaction=' + missingReference);

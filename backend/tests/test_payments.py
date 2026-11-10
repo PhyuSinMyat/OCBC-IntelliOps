@@ -6,10 +6,10 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 from main import app
 from shared.security import actor
-from modules.payment_processing.models import Transaction, ProcessingEvent, PaymentInstruction
+from modules.payment_processing.models import Transaction, ProcessingEvent, PaymentInstruction, ExceptionBatch, ExceptionBatchItem
 from modules.core_banking.models import LedgerEntry, LedgerJournal
 from modules.core_banking.seed import demo_id
-from modules.intelliops.models import ExceptionCase, AuditEvent, DetectionRule
+from modules.intelliops.models import ExceptionCase, ExceptionCaseAction, ExceptionResolution, LedgerPostingRemediation, AuditEvent, DetectionRule
 import test_accounts
 
 
@@ -104,6 +104,8 @@ class PaymentTests(unittest.TestCase):
 
     def test_posting_validation_failure_rolls_back_all_financial_changes(self):
         before = self.balance()
+        with Session(self.engine) as db:
+            instruction_count = db.scalar(select(func.count()).select_from(PaymentInstruction))
         with patch("modules.payment_processing.service.post_normal_journal", side_effect=ValueError("Unbalanced journal")):
             response = self.client.post("/api/payments", json=self.request())
         self.assertEqual(response.status_code, 422, response.text)
@@ -111,7 +113,7 @@ class PaymentTests(unittest.TestCase):
         with Session(self.engine) as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(Transaction)), 2)
             self.assertEqual(db.scalar(select(func.count()).select_from(LedgerJournal)), 2)
-            self.assertEqual(db.scalar(select(func.count()).select_from(PaymentInstruction)), 0)
+            self.assertEqual(db.scalar(select(func.count()).select_from(PaymentInstruction)), instruction_count)
             outcome = db.scalar(select(AuditEvent).where(AuditEvent.action == "PAYMENT_POSTING_FAILED"))
             self.assertTrue(outcome.details["financialChangesRolledBack"])
 
@@ -182,6 +184,110 @@ class PaymentTests(unittest.TestCase):
         self.assertEqual(self.client.post("/api/detection/run").json()["created"], 1)
         with Session(self.engine) as db:
             self.assertIsNotNone(db.scalar(select(ExceptionCase)).rule_id)
+
+    def test_missing_ledger_case_review_remediation_and_close_flow(self):
+        payment = self.post("MISSING_LEDGER")
+        with patch.dict(os.environ, {"INTELLIOPS_SIMULATION_TIME": "2026-11-03T03:01:01+00:00"}):
+            detected = self.client.post("/api/detection/run").json()
+            self.assertEqual(detected["created"], 1)
+            case_id = detected["caseIds"][0]
+            detail = self.client.get(f"/api/exceptions/{case_id}")
+            self.assertEqual(detail.status_code, 200, detail.text)
+            self.assertEqual(detail.json()["timeline"][0]["actionType"], "DETECTED")
+            reviewed = self.client.post(f"/api/exceptions/{case_id}/notes", json={"note": "Payment source evidence verified."})
+            self.assertEqual(reviewed.status_code, 200, reviewed.text)
+            self.assertEqual(reviewed.json()["status"], "IN_REVIEW")
+            payload = {"idempotency_key": "missing-ledger-fix-0001", "note": "Approved against source instruction."}
+            repaired = self.client.post(f"/api/exceptions/{case_id}/remediate", json=payload)
+            self.assertEqual(repaired.status_code, 200, repaired.text)
+            self.assertEqual(repaired.json()["status"], "RESOLVED")
+            self.assertTrue(repaired.json()["remediation"]["journalReference"].startswith("JRN-REM-"))
+            self.assertEqual([a["actionType"] for a in repaired.json()["timeline"]],
+                             ["DETECTED", "NOTE_ADDED", "REMEDIATION_POSTED", "RESOLVED"])
+            replay = self.client.post(f"/api/exceptions/{case_id}/remediate", json=payload)
+            self.assertEqual(replay.status_code, 200, replay.text)
+            self.assertEqual(replay.json()["remediation"]["journalReference"], repaired.json()["remediation"]["journalReference"])
+            self.assertEqual(self.client.post(f"/api/exceptions/{case_id}/notes", json={"note": "too late"}).status_code, 409)
+            closed = self.client.post(f"/api/exceptions/{case_id}/close", json={"note": "Control checks complete."})
+            self.assertEqual(closed.status_code, 200, closed.text)
+            self.assertEqual(closed.json()["status"], "CLOSED")
+            self.assertEqual(self.client.post("/api/detection/run").json()["created"], 0)
+        related = self.client.get(f"/api/payments/{payment['id']}/related").json()
+        self.assertEqual(len(related["journals"]), 1)
+        self.assertEqual(related["journals"][0]["debitTotal"], "100.00")
+        self.assertEqual(related["journals"][0]["creditTotal"], "100.00")
+        self.assertEqual(self.balance(), Decimal("44100"))
+        events = self.client.get(f"/api/payments/{payment['id']}/events").json()
+        self.assertEqual(events[-1]["eventType"], "LEDGER_REMEDIATED")
+        with Session(self.engine) as db:
+            self.assertEqual(db.scalar(select(func.count()).select_from(LedgerPostingRemediation)), 1)
+            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionCaseAction)), 5)
+
+    def test_missing_ledger_remediation_stops_when_a_late_journal_exists(self):
+        payment = self.post("MISSING_LEDGER")
+        with patch.dict(os.environ, {"INTELLIOPS_SIMULATION_TIME": "2026-11-03T03:01:01+00:00"}):
+            case_id = self.client.post("/api/detection/run").json()["caseIds"][0]
+            with Session(self.engine) as db, db.begin():
+                tx = db.scalar(select(Transaction).where(Transaction.reference == payment["id"]))
+                db.add(LedgerJournal(journal_ref="JRN-LATE", source_transaction_id=tx.id,
+                                     payment_reference=tx.reference, currency=tx.currency,
+                                     status="Draft", posted_at=None))
+            response = self.client.post(f"/api/exceptions/{case_id}/remediate",
+                                        json={"idempotency_key": "late-arrival-check-0001"})
+            self.assertEqual(response.status_code, 409, response.text)
+            with Session(self.engine) as db:
+                self.assertEqual(db.scalar(select(func.count()).select_from(LedgerPostingRemediation)), 0)
+                self.assertEqual(db.get(ExceptionCase, int(case_id.removeprefix("CASE-"))).status, "OPEN")
+
+    def test_duplicate_mismatch_and_processing_failure_resolution_policies(self):
+        payments = {code: self.post(code, idempotency_key=f"resolve-{code}")
+                    for code in ["DUPLICATE", "PROCESSING_FAILURE", "AMOUNT_MISMATCH"]}
+        self.assertEqual(self.client.post("/api/detection/run").json()["created"], 2)
+        with patch.dict(os.environ, {"INTELLIOPS_SIMULATION_TIME": "2026-11-03T03:01:01+00:00"}):
+            self.assertEqual(self.client.post("/api/detection/run").json()["created"], 1)
+            cases = {case["exceptionType"]: case for case in self.client.get("/api/exceptions").json()}
+            for number, kind in enumerate(["Duplicate Transaction", "Payment Processing Failure", "Amount Mismatch"], 1):
+                response = self.client.post(f"/api/exceptions/{cases[kind]['id']}/remediate", json={
+                    "idempotency_key": f"resolution-policy-{number:04d}", "note": "Approved test resolution."})
+                self.assertEqual(response.status_code, 200, response.text)
+                self.assertEqual(response.json()["status"], "RESOLVED")
+                self.assertIsNotNone(response.json()["remediation"]["type"])
+            self.assertEqual(self.client.post("/api/detection/run").json()["created"], 0)
+        duplicate = self.client.get(f"/api/payments/{payments['DUPLICATE']['id']}").json()
+        self.assertEqual(duplicate["status"], "Rejected")
+        self.assertEqual(duplicate["failureCode"], "DUPLICATE_REJECTED")
+        failure = self.client.get(f"/api/payments/{payments['PROCESSING_FAILURE']['id']}").json()
+        self.assertEqual(failure["status"], "Completed")
+        self.assertIsNone(failure["failureCode"])
+        mismatch = self.client.get(f"/api/payments/{payments['AMOUNT_MISMATCH']['id']}/related").json()
+        self.assertEqual(sum(Decimal(j["debitTotal"]) for j in mismatch["journals"]), Decimal("100.00"))
+        self.assertEqual(sum(Decimal(j["creditTotal"]) for j in mismatch["journals"]), Decimal("100.00"))
+        self.assertEqual(self.balance(), Decimal("44300.00"))
+        with Session(self.engine) as db:
+            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionResolution)), 3)
+
+    def test_admin_can_generate_selected_exception_batch_with_automatic_inputs(self):
+        response = self.client.post("/api/demo/exception-batches", json={
+            "exception_types": ["MISSING_LEDGER", "DUPLICATE", "PROCESSING_FAILURE"],
+            "count_per_type": 2,
+        })
+        self.assertEqual(response.status_code, 201, response.text)
+        data = response.json()
+        self.assertEqual(data["created"], 6)
+        self.assertEqual(len(data["transactionReferences"]), 6)
+        self.assertEqual(set(data["exceptionTypes"]), {"MISSING_LEDGER", "DUPLICATE", "PROCESSING_FAILURE"})
+        with Session(self.engine) as db:
+            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionBatch)), 1)
+            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionBatchItem)), 6)
+            instructions = db.scalars(select(PaymentInstruction).where(
+                PaymentInstruction.scenario_code.in_(["MISSING_LEDGER", "DUPLICATE", "PROCESSING_FAILURE"]))).all()
+            self.assertEqual(sum(i.scenario_code == "MISSING_LEDGER" for i in instructions), 2)
+            self.assertEqual(sum(i.scenario_code == "DUPLICATE" for i in instructions), 2)
+            self.assertEqual(sum(i.scenario_code == "PROCESSING_FAILURE" for i in instructions), 2)
+            self.assertTrue(all(i.idempotency_key.startswith("batch-") for i in instructions if i.scenario_code != "NORMAL"))
+        duplicate = self.client.post("/api/demo/exception-batches", json={
+            "exception_types": ["MISSING_LEDGER", "MISSING_LEDGER"], "count_per_type": 1})
+        self.assertEqual(duplicate.status_code, 422)
 
 
 if __name__ == "__main__":

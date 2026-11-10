@@ -12,7 +12,7 @@ backend and refreshes its snapshot after payment submission.
   normal journal posting validation. Exactly two persisted entries must match the
   sender debit, receiver credit, payment amount, currencies and references before
   posting. Posted reversal entries contribute according to their direction.
-- `modules/core_banking/models.py` and migration `20261103_03_normal_posting.py`:
+- `modules/core_banking/models.py` and migration `20261103_06_normal_posting.py`:
   journal creation time and a nullable unique normal transaction foreign key.
   Existing historical journals are not relabelled or rewritten.
 - `modules/payment_processing/service.py`: normal payments use those services;

@@ -3,6 +3,15 @@ import RecordDrawer from '../../shared/components/RecordDrawer.jsx';
 import { accounts, backendConnected, createSyntheticPayment, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { parseAmount, scenarios } from '../../shared/data/paymentSimulation.js';
 
+const selectableScenarios = ['MISSING_LEDGER', 'AMOUNT_MISMATCH', 'DUPLICATE', 'PROCESSING_FAILURE'];
+const scenarioHelp = {
+  NORMAL: 'Creates a normal payment with a balanced ledger journal.',
+  MISSING_LEDGER: 'Completes payment processing without creating a ledger journal. Detection raises the case after the reconciliation cutoff.',
+  AMOUNT_MISMATCH: 'Posts a balanced journal for one cent less than the payment amount.',
+  DUPLICATE: 'Creates an original payment and holds a duplicate instruction without a second posting.',
+  PROCESSING_FAILURE: 'Fails payment processing before any ledger journal is created.',
+};
+
 export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
   const records = useBankingRecords();
   const [values, setValues] = useState({ senderId: '', receiverId: '', amount: '', scenario: 'NORMAL' });
@@ -47,7 +56,15 @@ export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
     </fieldset>)}
     <label htmlFor="payment-amount">Amount</label><input id="payment-amount" inputMode="decimal" placeholder="0.00" value={values.amount} onChange={e => change('amount', e.target.value)} disabled={busy} aria-invalid={!!errors.amount} aria-describedby={errors.amount ? 'amount-error' : undefined}/>{errors.amount && <p id="amount-error" role="alert" className="movement-out">{errors.amount}</p>}
     <p className="payment-currency">Currency: <strong>{sender && receiver && sender.currency === receiver.currency ? sender.currency : 'Select compatible accounts'}</strong></p>
-    <details className="payment-advanced"><summary>Advanced Simulation Options</summary>{role === 'ADMIN' ? <label>Simulation Scenario<select value={values.scenario} onChange={e => change('scenario', e.target.value)} disabled={busy}>{Object.entries(scenarios).map(([code, label]) => <option value={code} key={code}>{label}</option>)}</select></label> : <p>Exception injection is restricted to the ADMIN {backendConnected ? 'role' : 'local demo role'}.</p>}<p className="history-caption">Scenarios generate source evidence. Run detection separately. Reconciliation uses a {records.reconciliationSeconds || 60}-second cutoff.</p></details>
+    <fieldset className="payment-exception-options">
+      <legend>Exception simulation</legend>
+      {role === 'ADMIN' ? <label htmlFor="payment-exception-type">Exception type<select id="payment-exception-type" value={values.scenario} onChange={e => change('scenario', e.target.value)} disabled={busy}>
+        <option value="NORMAL">No exception (Normal Payment)</option>
+        {selectableScenarios.map(code => <option value={code} key={code}>{scenarios[code]}</option>)}
+      </select></label> : <p>Exception injection is restricted to the ADMIN {backendConnected ? 'role' : 'local demo role'}. This payment will use normal processing.</p>}
+      <p className="payment-scenario-help">{role === 'ADMIN' ? scenarioHelp[values.scenario] : scenarioHelp.NORMAL}</p>
+      <p className="history-caption">Exception scenarios generate source evidence; they do not create cases directly. Run detection separately. Reconciliation-dependent cases use a {records.reconciliationSeconds || 60}-second cutoff.</p>
+    </fieldset>
     {errors.submit && <p role="alert" className="movement-out">{errors.submit}</p>}
     <div className="payment-form-actions"><button className="simulation-button" disabled={busy} type="submit">{busy ? 'Submitting payment…' : 'Submit Synthetic Payment'}</button><button type="button" className="account-link" disabled={busy} onClick={onClose}>Cancel</button></div>
   </form></RecordDrawer>;

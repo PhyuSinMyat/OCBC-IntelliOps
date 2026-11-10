@@ -60,3 +60,23 @@ class PaymentInstruction(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reconciliation_due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     __table_args__ = (CheckConstraint("sender_account_id <> receiver_account_id", name="ck_payment_parties"),)
+
+
+class ExceptionBatch(Base):
+    __tablename__ = "exception_batches"
+    batch_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    requested_scenarios: Mapped[list] = mapped_column(JSON)
+    count_per_type: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(20), default="COMPLETED")
+    created_by: Mapped[str] = mapped_column(String(80))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ExceptionBatchItem(Base):
+    __tablename__ = "exception_batch_items"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    batch_id: Mapped[UUID] = mapped_column(ForeignKey("exception_batches.batch_id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id"), unique=True)
+    scenario_code: Mapped[str] = mapped_column(String(50))
+    sequence: Mapped[int] = mapped_column(Integer)

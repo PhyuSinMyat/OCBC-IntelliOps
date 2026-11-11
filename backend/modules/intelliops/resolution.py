@@ -2,7 +2,7 @@ from decimal import Decimal
 from uuid import uuid4
 from sqlalchemy import or_, select
 from modules.core_banking.models import Account, LedgerEntry, LedgerJournal, LedgerRecord
-from modules.core_banking.service import account_query, valid_journals
+from modules.core_banking.service import account_query, valid_journals, assess_journal
 from modules.payment_processing.models import PaymentInstruction, ProcessingEvent, Transaction
 from modules.payment_processing.service import simulation_now
 from .models import (AuditEvent, ExceptionCaseAction, ExceptionResolution,
@@ -19,6 +19,23 @@ def context(db, case):
     if not sender or not receiver or sender.currency != tx.currency or receiver.currency != tx.currency:
         raise CaseError("Payment account or currency evidence is inconsistent; automatic resolution is unsafe.", 409)
     return tx, instruction, sender, receiver
+
+
+def aligned_journals(db, tx, instruction):
+    """Revalidate current financial evidence, never authorize from a saved diagnosis."""
+    journals = db.scalars(select(LedgerJournal).where(or_(LedgerJournal.source_transaction_id == tx.id,
+                                                        LedgerJournal.payment_reference == tx.reference))).all()
+    accounts = {a.account_id: a for a in db.scalars(select(Account))}
+    amounts = []
+    if db.scalar(select(LedgerRecord.id).where(LedgerRecord.transaction_id == tx.id)) is not None:
+        raise CaseError("Legacy ledger evidence requires manual reconciliation before correction.", 409)
+    for j in journals:
+        entries = db.scalars(select(LedgerEntry).where(LedgerEntry.journal_id == j.journal_id)).all()
+        a = assess_journal(j, entries, accounts, tx, instruction)
+        if not a["valid"] or any(a[k] for k in ("currency_mismatch", "party_mismatch", "reference_mismatch")):
+            raise CaseError("Current journal evidence is invalid or inconsistent; correction stopped.", 409)
+        amounts.append(a["debit"])
+    return amounts
 
 
 def journal(db, tx, sender, receiver, amount, now, purpose):
@@ -89,6 +106,8 @@ def remediate_exception(db, case_id, request, role, now=None):
         db.add(ProcessingEvent(transaction_id=tx.id, event_type="LEDGER_REMEDIATED", status="COMPLETED", details=summary, created_at=now))
 
     elif case.exception_type == "Amount Mismatch":
+        if not aligned_journals(db, tx, instruction):
+            raise CaseError("No valid modern posting remains; shortfall adjustment stopped.", 409)
         valid_ids = set(db.scalars(valid_journals()))
         journals = db.scalars(select(LedgerJournal).where(or_(LedgerJournal.source_transaction_id == tx.id,
                                                               LedgerJournal.payment_reference == tx.reference))).all()
@@ -110,6 +129,15 @@ def remediate_exception(db, case_id, request, role, now=None):
     elif case.exception_type == "Duplicate Transaction":
         if instruction.original_payment_id is None:
             raise CaseError("The duplicate has no verified original payment link; automatic rejection is unsafe.", 409)
+        original_instruction = db.get(PaymentInstruction, instruction.original_payment_id)
+        original = db.get(Transaction, original_instruction.transaction_id) if original_instruction else None
+        if (original is None or original.status != "COMPLETED" or tx.status != "PENDING"
+                or original.amount != tx.amount or original.currency != tx.currency
+                or original_instruction.sender_account_id != instruction.sender_account_id
+                or original_instruction.receiver_account_id != instruction.receiver_account_id):
+            raise CaseError("Original and held duplicate instruction evidence is inconsistent.", 409)
+        if aligned_journals(db, original, original_instruction) != [original.amount] or aligned_journals(db, tx, instruction):
+            raise CaseError("Duplicate containment requires one verified original posting and no duplicate posting.", 409)
         tx.status, instruction.completed_at = "REJECTED", now
         instruction.failure_code = "DUPLICATE_REJECTED"
         instruction.failure_description = "Duplicate instruction rejected; the original posting remains authoritative."

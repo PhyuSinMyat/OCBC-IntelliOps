@@ -1,13 +1,13 @@
-import React, { useState, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, FileSearch, FlaskConical, History, LoaderCircle, RotateCcw, TriangleAlert } from 'lucide-react';
 import RecordDrawer from '../../shared/components/RecordDrawer.jsx';
-import { accounts, backendConnected, useBankingRecords } from '../../shared/data/bankingRecords.js';
+import { accounts, backendConnected, fetchExceptionCase, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { isDuplicate, relatedPayments, stages } from './investigation/analysis.js';
 import { developmentFixture, fixtureOptions } from './investigation/fixtures.js';
 import { getRuns, investigationKey, investigationRevision, sendToResolution, startInvestigation, subscribeInvestigations } from './investigation/service.js';
 import { displayTime, humanize, InvestigationTrace, Section, SourceLink } from './investigation/ReportSections.jsx';
-import { CausalTimeline, DiagnosisHero, EvidenceExplorer, ExecutionPaths, FinancialImpact, KeyResults, NextBestAction, ReadyInvestigation, StageDetails } from './investigation/CommandCenter.jsx';
+import { CausalTimeline, DiagnosisHero, EvidenceExplorer, ExecutionPaths, FinancialImpact, KeyResults, NextBestAction, ReadyInvestigation, StageDetails, ModelFindings } from './investigation/CommandCenter.jsx';
 import './investigation.css';
 
 function DevelopmentExamples() {
@@ -15,6 +15,7 @@ function DevelopmentExamples() {
 }
 
 function Progress({ run }) {
+  if (run.prototype === false) return <section className="cc-progress"><h2>{run.run_status === 'FAILED' ? 'Investigation stopped' : 'Reviewing source evidence with AI'}</h2><p>The backend retrieves database evidence, verifies ledger facts and requests a structured model analysis. No financial action is executed.</p><p>Results are saved in this browser tab only. No simulated processing stages or prototype fallback are used.</p></section>;
   const s = run.snapshot;
   const results = [
     [s.original, s.duplicate].filter(Boolean).map(p => p.id),
@@ -36,12 +37,24 @@ export default function AIInvestigation() {
   useSyncExternalStore(subscribeInvestigations, investigationRevision);
   const [params] = useSearchParams();
   const location = useLocation(), navigate = useNavigate();
+  const caseId = params.get('case');
+  const [loadedCase, setLoadedCase] = useState(null), [loadError, setLoadError] = useState('');
+  useEffect(() => {
+    setLoadedCase(null); setLoadError('');
+    if (!backendConnected || !caseId) return;
+    let current = true;
+    fetchExceptionCase(caseId).then(value => { if (current) setLoadedCase(value); })
+      .catch(error => { if (current) setLoadError(error.message); });
+    return () => { current = false; };
+  }, [caseId]);
   const fixtureName = params.get('fixture'), fixture = developmentFixture(fixtureName);
   const records = fixture?.records || sharedRecords;
-  const selected = fixture?.caseRecord || (sharedRecords.exception_cases || []).find(c => c.id === params.get('case'));
-  const invalidFixture = Boolean(fixtureName && !fixture);
+  const selected = fixture?.caseRecord || (loadedCase?.id === caseId ? loadedCase : null) || (sharedRecords.exception_cases || []).find(c => c.id === caseId);
+  const invalidFixture = Boolean(fixtureName && (!fixture || caseId));
   const accountList = fixture?.accounts || accounts;
-  const key = selected ? investigationKey(selected, fixture ? `fixture:${fixtureName}` : backendConnected ? `backend:${import.meta.env.VITE_BANKING_API_URL}` : 'local') : '';
+  const key = selected ? investigationKey(selected, fixture ? `fixture:${fixtureName}` : backendConnected ? `backend-llm:${import.meta.env.VITE_BANKING_API_URL}` : 'local') : '';
+  if (backendConnected && caseId && !selected && !loadError) return <p role="status">Loading selected case…</p>;
+  if (loadError) return <p className="inv-error" role="alert">{loadError}</p>;
   return <InvestigationWorkspace key={`${key}:${invalidFixture}`} {...{ selected, records, accountList, fixture, keyValue: key, location, navigate, invalidFixture }}/>;
 }
 
@@ -63,7 +76,7 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
     setError(''); setViewedId(null);
     const failEvidence = !retry && failNext;
     setFailNext(false);
-    try { await startInvestigation({ key: keyValue, caseRecord: selected, records, accounts: accountList, fixture: fixture?.fixture, failEvidence }); }
+    try { await startInvestigation({ key: keyValue, caseRecord: selected, records, accounts: accountList, fixture: fixture?.fixture, failEvidence, mode: backendConnected && !fixture ? 'backend' : 'prototype' }); }
     catch (e) { setError(e.message); }
   }
   function handoff() {
@@ -79,7 +92,7 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
     <Link className="inv-back" to={back}><ArrowLeft size={14}/>Back to Exception Center</Link>
     <div className="page-heading inv-page-heading cc-page-heading"><div><p className="eyebrow">Investigation command center</p><h1>AI Investigation</h1></div><span className="cc-page-purpose">From a detected exception to an evidence-backed finding.</span></div>
     {!selected || invalidFixture ? <><Section title={location.search ? 'Investigation unavailable' : 'No Investigation Selected'} className="inv-empty"><FileSearch size={36}/><p>{location.search ? 'The selected case or development fixture is unavailable in the current dataset.' : 'Choose an exception from Exception Center to begin investigating its underlying cause.'}</p><Link className="inv-button inv-primary" to="/intelliops/exceptions">Browse Exceptions<ArrowRight size={15}/></Link></Section><DevelopmentExamples/></> : <>
-      <div className="cc-prototype-note"><FlaskConical size={14}/><strong>{fixture ? `Development fixture · ${fixtureOptions[fixture.fixture]}` : 'Prototype investigation adapter'}</strong><span>Deterministic simulation · No live LLM</span></div>
+      <div className="cc-prototype-note"><FlaskConical size={14}/><strong>{fixture ? `Development fixture · ${fixtureOptions[fixture.fixture]}` : backendConnected ? 'Backend AI investigation' : 'Prototype investigation adapter'}</strong><span>{backendConnected && !fixture ? 'Database evidence · Structured model analysis · Reports saved in this tab' : 'Deterministic simulation · No live LLM'}</span></div>
       <header className="inv-case-header cc-case-header"><div className="inv-case-top"><div><div className="cc-case-reference"><span>{selected.id}</span><span className={`cc-severity ${selected.severity?.toUpperCase() === 'HIGH' ? 'cc-high' : ''}`}>{humanize(selected.severity)} severity</span></div><h2>{supported ? 'Potential Duplicate Transaction' : selected.exceptionType}</h2><div className="inv-related">{supported && <><SourceLink reference={original?.id} fixture={fixture?.fixture}/><span className="cc-reference-divider">/</span></>}<SourceLink reference={duplicate?.id || selected.transactionId} fixture={fixture?.fixture}/></div></div><div className="inv-header-actions">{caseDetails}<button className="inv-button cc-history-button" onClick={() => setDrawer({ type: 'history' })}><History size={15}/>View Investigation History</button></div></div><div className="cc-case-footer"><span>Case status <strong>{humanize(selected.status)}</strong></span><span>Investigation <strong>{latest ? humanize(latest.run_status) : 'Ready to investigate'}</strong></span><details><summary>Case metadata</summary><p>Assigned analyst: {selected.assignedTo || 'Unassigned'}</p><p>Detected: {displayTime(selected.createdAt)}</p></details></div></header>
       {!supported ? <Section title="Investigation not yet supported"><p>This workspace supports Duplicate Transaction cases. No duplicate findings have been generated for this exception.</p>{caseDetails}</Section> : <>
         {error && <p className="inv-error" role="alert">{error}</p>}
@@ -88,7 +101,7 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
         {viewed && !report && <><div className="inv-run-status" role="status">{running ? <LoaderCircle className="inv-spinner" size={17}/> : <TriangleAlert size={17}/>}<span>{humanize(viewed.run_status)} · {viewed.stage_index >= 0 ? stages[viewed.stage_index][0] : 'Waiting to collect evidence'}</span></div><Progress run={viewed}/>{viewed.run_status === 'FAILED' && <Section title="Investigation could not be completed" className="inv-failure"><p role="alert">{viewed.error}</p><p>No diagnosis produced. Your case is unchanged.</p><button className="inv-button inv-primary" onClick={() => run(true)} disabled={running}><RotateCcw size={15}/>Retry Investigation</button></Section>}</>}
         {report && <>
           <div className="cc-detected-signal"><span>Rule engine alert</span><p>Potential duplicate requests</p><ArrowRight size={14}/><strong>Investigation findings below</strong></div>
-          <DiagnosisHero {...{ report, onTrace }}/>
+          <DiagnosisHero {...{ report, onTrace }}/><ModelFindings report={report}/>
           <KeyResults report={report}/>
           <ExecutionPaths {...{ report, onInspect }}/>
           <CausalTimeline {...{ report, onTrace, onInspect }}/>
@@ -96,7 +109,7 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
           <EvidenceExplorer {...{ report, onInspect }}/>
           <NextBestAction {...{ report, historical, running }} onSend={handoff} onRun={() => run()}/>
         </>}
-        {!running && !historical && <details className="inv-development"><summary>Prototype run controls</summary><label className="inv-checkbox"><input type="checkbox" checked={failNext} onChange={e => setFailNext(e.target.checked)}/>Simulate a ledger evidence timeout on the next new run</label><p>Retry collects a fresh snapshot. Previous runs remain in history.</p></details>}
+        {(!backendConnected || fixture) && !running && !historical && <details className="inv-development"><summary>Prototype run controls</summary><label className="inv-checkbox"><input type="checkbox" checked={failNext} onChange={e => setFailNext(e.target.checked)}/>Simulate a ledger evidence timeout on the next new run</label><p>Retry collects a fresh snapshot. Previous runs remain in history.</p></details>}
       </>}
       <RecordDrawer open={Boolean(drawer)} title={drawerTitle} onClose={() => setDrawer(null)}>
         {drawer?.type === 'stage' && <StageDetails context={drawer.context}/>}

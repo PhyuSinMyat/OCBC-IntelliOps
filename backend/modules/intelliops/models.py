@@ -4,7 +4,7 @@ from sqlalchemy import String, Numeric, ForeignKey, DateTime, Boolean, Integer, 
 from sqlalchemy.orm import Mapped, mapped_column
 from shared.database import Base
 from shared.timestamps import utc_now
-from sqlalchemy import Index, Uuid
+from sqlalchemy import Index, Uuid, CheckConstraint, UniqueConstraint
 from uuid import UUID
 
 
@@ -18,6 +18,34 @@ class DetectionRule(Base):
     enabled: Mapped[bool] = mapped_column(
         Boolean, default=True
     )
+    code: Mapped[str | None] = mapped_column(String(60), unique=True)
+    description: Mapped[str] = mapped_column(Text, default="")
+    severity: Mapped[str] = mapped_column(String(20), default="HIGH")
+    configuration: Mapped[dict] = mapped_column(JSON, default=dict)
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, onupdate=utc_now)
+    __table_args__ = (
+        UniqueConstraint("exception_type", name="uq_detection_rule_type"),
+        CheckConstraint("version >= 1", name="ck_detection_rule_version"),
+        CheckConstraint("severity IN ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')", name="ck_detection_rule_severity"),
+        CheckConstraint("threshold IS NULL OR threshold >= 0", name="ck_detection_rule_threshold"),
+    )
+
+
+class DetectionObservation(Base):
+    """Latest detector observation; recovery must be observed before recurrence.
+
+    This mutable cursor is separate from immutable case evidence/history.
+    """
+    __tablename__ = "detection_observations"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id"), index=True)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("detection_rules.id"))
+    defective: Mapped[bool] = mapped_column(Boolean)
+    fingerprint: Mapped[str | None] = mapped_column(String(64))
+    policy_fingerprint: Mapped[str] = mapped_column(String(64))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    __table_args__ = (UniqueConstraint("transaction_id", "rule_id", name="uq_detection_observation"),)
 
 
 

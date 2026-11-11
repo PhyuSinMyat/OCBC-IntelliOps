@@ -1,6 +1,6 @@
 import React from 'react';
 import { ArrowRight, CheckCircle2, ChevronRight, CircleHelp, Clock3, FileSearch, GitBranch, Layers3, Link2, ListTree, ShieldCheck, TriangleAlert, Wallet } from 'lucide-react';
-import { amount, displayTime, humanize, PaymentComparison, SourceLink } from './ReportSections.jsx';
+import { amount, displayTime, humanize, PaymentComparison, SourceLink, Section } from './ReportSections.jsx';
 import { causalEvents, eventContext, eventLabel, paymentPath, resultSummary } from './presentation.js';
 
 const shortTime = value => value && Number.isFinite(Date.parse(value)) ? new Intl.DateTimeFormat('en-SG', { timeStyle: 'medium', timeZone: 'Asia/Singapore' }).format(new Date(value)) : 'Time unavailable';
@@ -24,7 +24,7 @@ export function ReadyInvestigation({ original, duplicate, accounts, fixture, onS
 export function DiagnosisHero({ report, onTrace }) {
   const v = resultSummary(report);
   return <section className={`cc-hero ${v.identified ? 'cc-identified' : 'cc-undetermined'}`} aria-labelledby="cc-diagnosis-title"><div className="cc-hero-top"><span className="cc-hero-label">{v.identified ? <ShieldCheck size={17}/> : <CircleHelp size={17}/>} {v.identified ? 'Root cause identified' : 'Root cause undetermined'}</span><span className="cc-completed" role="status"><CheckCircle2 size={15}/>Investigation Completed</span></div><h2 className="sr-only">Root Cause Analysis</h2><h3 id="cc-diagnosis-title">{report.root_cause_title}</h3><p className="cc-hero-explanation">{v.explanation}</p><div className="cc-hero-footer"><span><Layers3 size={14}/>{report.evidence_strength}</span><span><Clock3 size={14}/>{displayTime(report.completed_at)}</span><button className="cc-text-button" onClick={onTrace}>View Full Investigation Trace<ArrowRight size={14}/></button></div>
-      <div className="cc-classification">{humanize(report.diagnosis_classification)}</div><details className="cc-diagnosis-details"><summary>Classification and uncertainty{report.unresolved_questions.length > 0 && <span>{report.unresolved_questions.length} evidence gaps</span>}</summary><p className="inv-kicker">{report.diagnosis_classification}</p>{report.unresolved_questions.length ? <ul>{report.unresolved_questions.map(q => <li key={q}>{q}</li>)}</ul> : <p>The recorded snapshot supports this finding. Recheck current state before resolution.</p>}<p className="inv-muted">Snapshot: {displayTime(report.evidence_snapshot_at)} · Deterministic prototype analysis.</p></details>
+      <div className="cc-classification">{humanize(report.diagnosis_classification)}</div><details className="cc-diagnosis-details"><summary>Classification and uncertainty{report.unresolved_questions.length > 0 && <span>{report.unresolved_questions.length} evidence gaps</span>}</summary><p className="inv-kicker">{report.diagnosis_classification}</p>{report.unresolved_questions.length ? <ul>{report.unresolved_questions.map(q => <li key={q}>{q}</li>)}</ul> : <p>The recorded snapshot supports this finding. Recheck current state before resolution.</p>}<p className="inv-muted">Snapshot: {displayTime(report.evidence_snapshot_at)} · {report.prototype === false ? 'Backend AI analysis with verified source checks. Saved in this browser tab.' : 'Deterministic prototype analysis.'}</p></details>
     </section>;
 }
 export function KeyResults({ report }) {
@@ -89,4 +89,9 @@ export function StageDetails({ context }) {
     ['Processing stage', e?.status || payment?.status || 'Unavailable'], ['Source event ID', e?.id || 'Not applicable'],
     ['Error code', e?.errorCode || 'None recorded'], ['Correlation ID', e?.correlationId || 'Unavailable'],
   ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{(j || node.journalRefs?.length > 0) && <div><h3>Linked journal evidence</h3>{(j ? [j.id] : node.journalRefs).map(ref => <p key={ref}><SourceLink kind="journal" reference={ref} fixture={s.fixture}/></p>)}</div>}<p className="inv-muted">Evidence snapshot: {displayTime(report.evidence_snapshot_at)}</p></div>;
+}
+
+export function ModelFindings({ report }) {
+  if (!report.llm_analysis) return null;
+  return <Section title="AI Evidence Analysis"><p>Model: {report.model}. Financial and cause classifications are bounded by verified source records. Hypotheses remain unconfirmed.</p>{[['Supported findings', report.llm_analysis.facts], ['Unconfirmed hypotheses', report.llm_analysis.hypotheses]].map(([title, claims]) => <div key={title}><h3>{title}</h3>{claims.length ? claims.map((claim, i) => <article key={i}><p>{claim.statement}</p><p>{claim.evidence_refs.map(ref => <code key={ref}>{ref} </code>)}</p></article>) : <p>No additional hypotheses returned.</p>}</div>)}</Section>;
 }

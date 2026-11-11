@@ -4,7 +4,8 @@ export function resultSummary(report) {
   const separate = report.diagnosis_classification === 'LEGITIMATE_SEPARATE_INSTRUCTIONS';
   const timeout = report.root_cause_code === 'CLIENT_RETRY_ACK_TIMEOUT';
   const idempotency = report.root_cause_code === 'IDEMPOTENCY_CONTROL_FAILURE';
-  const identified = timeout || separate || idempotency;
+  const customer = report.root_cause_code === 'CUSTOMER_DOUBLE_SUBMISSION';
+  const identified = timeout || separate || idempotency || customer;
   const f = report.financial_execution_assessment;
   const financial = {
     SINGLE_POSTING_CONFIRMED: ['One posting confirmed', 'Original posted; repeated request held before execution.', 'positive'],
@@ -16,14 +17,14 @@ export function resultSummary(report) {
   const shared = a?.businessReference && a.businessReference === b?.businessReference ? a.businessReference : null;
   return {
     identified, same, separate, timeout,
-    explanation: idempotency ? report.root_cause_explanation : timeout ? 'Correlated timeout and retry events link the repeated request to the same payment instruction.' : separate ?
-      'Verified business references establish separate intended instructions despite similar payment details.' : same ?
+    explanation: idempotency || customer ? report.root_cause_explanation : timeout ? 'Correlated timeout and retry events link the repeated request to the same payment instruction.' : separate ?
+      'Verified authorization evidence establishes separate intended instructions despite similar payment details.' : same ?
         'The requests share the same intended instruction. Available events do not establish why it was submitted again.' :
         'The available records do not establish the intended relationship or underlying cause.',
     relationship: [same ? 'Same intended instruction' : separate ? 'Different instructions' : 'Relationship unverified',
-      same ? shared ? `Both requests share ${shared}.` : 'Source original-payment link and payment attributes agree.' : separate ? 'Two separately verified business references.' : 'Additional instruction evidence is needed.', same ? 'positive' : separate ? 'neutral' : 'caution'],
-    cause: [idempotency ? 'Idempotency control failure' : timeout ? 'Acknowledgment timeout' : separate ? 'Legitimate repeated payments' : 'Root cause unknown',
-      idempotency ? 'The structured diagnosis identifies a control failure.' : timeout ? 'A correlated retry follows the timeout.' : separate ? 'Separate instructions explain the similarity.' : 'No evidence establishes the submission trigger.', identified ? 'neutral' : 'caution'],
+      same ? shared ? `Both requests share ${shared}.` : 'Source instruction evidence and payment attributes agree.' : separate ? 'Two separately verified payment instructions.' : 'Additional instruction evidence is needed.', same ? 'positive' : separate ? 'neutral' : 'caution'],
+    cause: [customer ? 'Customer double submission' : idempotency ? 'Idempotency control failure' : timeout ? 'Acknowledgment timeout' : separate ? 'Legitimate repeated payments' : 'Root cause unknown',
+      customer ? 'Two explicit customer submission events identify the same intended payment.' : idempotency ? 'The structured diagnosis identifies a control failure.' : timeout ? 'A correlated retry follows the timeout.' : separate ? 'Separate instructions explain the similarity.' : 'No evidence establishes the submission trigger.', identified ? 'neutral' : 'caution'],
     financial,
   };
 }
@@ -78,6 +79,12 @@ export function causalEvents(report) {
     add(timeout);
     add(events.find(e => e.paymentId === s.duplicate?.id && e.eventType === 'RETRY_SUBMITTED' && e.correlationId === timeout?.correlationId && Date.parse(e.occurredAt) >= Date.parse(timeout?.occurredAt)));
   } else add(events.find(e => e.paymentId === s.duplicate?.id && e.eventType === 'PAYMENT_CREATED'));
+  if (report.prototype === false) {
+    const types = report.root_cause_code === 'CUSTOMER_DOUBLE_SUBMISSION' ? ['CLIENT_SUBMISSION'] :
+      report.root_cause_code === 'IDEMPOTENCY_CONTROL_FAILURE' ? ['ACK_TIMEOUT', 'RETRY_SUBMITTED', 'IDEMPOTENCY_CHECK_FAILED'] :
+      report.root_cause_code === 'LEGITIMATE_REPEATED_PAYMENT' ? ['PAYMENT_AUTHORIZED'] : [];
+    events.filter(e => types.includes(e.eventType)).forEach(add);
+  }
   add(events.find(e => e.paymentId === s.duplicate?.id && ['DUPLICATE_BLOCKED', 'LEDGER_POSTED'].includes(e.eventType)));
   return result.sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
 }

@@ -8,6 +8,36 @@ from sqlalchemy import select, func, case, and_
 from .models import Account, Customer, LedgerJournal, LedgerEntry
 
 
+def assess_journal(journal, entries, accounts, transaction=None, instruction=None):
+    """Read-only accounting and payment-level checks; amount is assessed separately."""
+    reasons = []
+    if journal.status != "Posted":
+        reasons.append("NOT_POSTED")
+    if journal.posted_at is None:
+        reasons.append("MISSING_POSTING_TIMESTAMP")
+    if len(entries) < 2:
+        reasons.append("MISSING_ENTRIES")
+    debit = credit = Decimal(0)
+    for entry in entries:
+        account = accounts.get(entry.account_id)
+        if entry.side not in ("Debit", "Credit") or not entry.posted or not entry.amount.is_finite() or entry.amount <= 0:
+            reasons.append("INVALID_ENTRY")
+        elif entry.side == "Debit":
+            debit += entry.amount
+        else:
+            credit += entry.amount
+        if not account:
+            reasons.append("MISSING_ACCOUNT")
+        if entry.currency != journal.currency or account and account.currency != entry.currency:
+            reasons.append("INTERNAL_CURRENCY_CONFLICT")
+    if debit != credit or debit <= 0:
+        reasons.append("UNBALANCED_OR_EMPTY")
+    return dict(valid=not reasons, reasons=sorted(set(reasons)), debit=debit, credit=credit,
+                currency_mismatch=bool(transaction and (journal.currency != transaction.currency or any(e.currency != transaction.currency for e in entries))),
+                party_mismatch=bool(instruction and any(e.account_id != (instruction.sender_account_id if e.side == "Debit" else instruction.receiver_account_id) for e in entries if e.side in ("Debit", "Credit"))),
+                reference_mismatch=bool(transaction and (journal.payment_reference != transaction.reference or journal.source_transaction_id not in (None, transaction.id))))
+
+
 def validate_ownership(db, customer_id, account_type):
     customer = db.get(Customer, customer_id)
     if customer is None:

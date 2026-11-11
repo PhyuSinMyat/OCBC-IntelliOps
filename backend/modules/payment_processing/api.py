@@ -9,6 +9,7 @@ from modules.core_banking.router import get_db
 from modules.core_banking.models import Account, Customer, LedgerJournal, LedgerEntry
 from modules.intelliops.models import AuditEvent
 from modules.intelliops.detection import detect, case_dtos
+from modules.intelliops.rules import DetectionConfigurationError
 from .models import Transaction, PaymentInstruction, ProcessingEvent
 from .schemas import PaymentRequest, ScenarioRequest, ExceptionBatchRequest, PaymentOut, PaymentPage, EventOut, RelatedOut
 from .service import create_payment, payment_dtos, find_payment, PaymentError, aware, fingerprint
@@ -130,8 +131,11 @@ def related_records(payment_id: str, db=Depends(get_db), role=Depends(actor)):
 
 @router.post("/detection/run")
 def run_detection(db=Depends(get_db), role=Depends(actor)):
-    with db.begin():
-        ids = detect(db, role)
+    try:
+        with db.begin():
+            ids = detect(db, role)
+    except DetectionConfigurationError as error:
+        raise HTTPException(422, str(error)) from error
     return {"created": len(ids), "caseIds": [f"CASE-{value:06d}" for value in ids]}
 
 

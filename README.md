@@ -408,7 +408,7 @@ Open -> Investigating -> [Awaiting Approval] -> Resolving -> Closed
 - **Investigating:** Evidence collection and analysis in progress.
 - **Awaiting Approval:** Proposed action requires human signoff.
 - **Resolving:** Authorized action and/or verification in progress.
-- **Closed:** Handling concluded, with explicit closure outcome (`Resolved` or `No Action Required`).
+- **Closed:** Handling concluded, with explicit closure outcome (`Resolved` or `No Action Required`). 
 
 An escalation is a **routing/attention flag**, not a separate primary lifecycle state. Failed verification is an event and flag, not a successful final status. A case should not be marked resolved when a proposal has merely been generated.
 

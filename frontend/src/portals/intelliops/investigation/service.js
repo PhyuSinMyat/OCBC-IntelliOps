@@ -1,4 +1,5 @@
 import { analyzeSnapshot, evidenceSnapshot, isDuplicate, stages } from './analysis.js';
+import { exceptionRequest } from '../../../shared/api/banking.js';
 
 const storageKey = 'intelliops-investigations-prototype-v2';
 const listeners = new Set();
@@ -12,7 +13,7 @@ const activeStatuses = ['QUEUED', 'COLLECTING_EVIDENCE', 'ANALYZING'];
 for (const runs of Object.values(saved.runs)) {
   for (const run of runs) if (activeStatuses.includes(run.run_status)) {
     run.run_status = 'FAILED';
-    run.error = 'This simulated run was interrupted by a page reload. Retry to collect a fresh evidence snapshot.';
+    run.error = run.prototype === false ? 'The AI request was interrupted by a page reload. Retry explicitly; no saved result is available.' : 'This simulated run was interrupted by a page reload. Retry to collect a fresh evidence snapshot.';
     run.completed_at = new Date().toISOString();
   }
 }
@@ -28,11 +29,11 @@ export const getRuns = key => saved.runs[key] || [];
 export const getHandoff = id => saved.handoffs[id] || null;
 const pause = () => new Promise(resolve => setTimeout(resolve, 420));
 
-// Replace this adapter with FastAPI start/status/report calls when available.
-// Components consume structured reports and never parse generated prose.
-export async function startInvestigation({ key, caseRecord, records, accounts, fixture, failEvidence = false }) {
+export async function startInvestigation({ key, caseRecord, records, accounts, fixture, failEvidence = false, mode }) {
   if (!isDuplicate(caseRecord)) throw new Error('Only Duplicate Transaction investigation is supported.');
+  if (!['backend', 'prototype'].includes(mode)) throw new Error('Select an explicit backend or prototype investigation mode.');
   if (getRuns(key).some(r => activeStatuses.includes(r.run_status))) throw new Error('An investigation is already running for this case.');
+  if (mode === 'backend') return startBackendInvestigation(key, caseRecord);
   const now = new Date().toISOString();
   const snapshot = evidenceSnapshot(caseRecord, records, accounts, fixture);
   const run = { case_id: caseRecord.id, investigation_id: `INV-${crypto.randomUUID()}`, run_status: 'QUEUED',
@@ -62,11 +63,37 @@ export async function startInvestigation({ key, caseRecord, records, accounts, f
   }
   return run;
 }
+
+async function startBackendInvestigation(key, caseRecord) {
+  const now = new Date().toISOString();
+  const run = { case_id: caseRecord.id, investigation_id: `REQUEST-${crypto.randomUUID()}`,
+    run_status: 'ANALYZING', started_at: now, completed_at: null, stage_index: -1, prototype: false,
+    snapshot: { original: null, duplicate: null, events: [], journals: [], entries: [], fixture: null } };
+  const previous = getRuns(key);
+  saved.runs[key] = [...previous, run];
+  try { persist(); } catch { saved.runs[key] = previous; throw new Error('Unable to save investigation state. Enable session storage and retry.'); }
+  notify();
+  try {
+    const report = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseRecord.id)}/investigations`, { method: 'POST' });
+    if (report.case_id !== caseRecord.id || report.prototype !== false || report.run_status !== 'COMPLETED' || !report.llm_analysis || !report.supporting_evidence) {
+      throw new Error('Backend returned an invalid AI investigation result. No prototype was substituted.');
+    }
+    Object.assign(run, { investigation_id: report.investigation_id, run_status: 'COMPLETED', report,
+      completed_at: report.completed_at, evidence_snapshot_at: report.evidence_snapshot_at, snapshot: report.supporting_evidence });
+    persist(); notify();
+  } catch (error) {
+    run.run_status = 'FAILED'; run.completed_at = new Date().toISOString(); run.error = error.message;
+    delete run.report;
+    try { persist(); } catch { run.error = 'The result could not be saved. Enable session storage and retry explicitly.'; }
+    notify();
+  }
+  return run;
+}
 export function sendToResolution(key, investigationId) {
   const run = getRuns(key).find(r => r.investigation_id === investigationId);
   if (run?.run_status !== 'COMPLETED' || !run.report) throw new Error('A completed investigation is required.');
   const id = run.investigation_id;
-  const handoff = structuredClone({ ...run.report, evidence_references: [
+  const handoff = structuredClone({ ...run.report, evidence_references: run.report.evidence_references || [
     ...run.snapshot.events.map(e => `event:${e.id}`), ...run.snapshot.journals.map(j => `journal:${j.id}`),
     ...[run.snapshot.original, run.snapshot.duplicate].filter(Boolean).map(p => `payment:${p.id}`),
   ], submitted_at: new Date().toISOString(), source_scope: key, fixture: run.snapshot.fixture });

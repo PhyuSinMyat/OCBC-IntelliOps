@@ -1,834 +1,516 @@
 # OCBC IntelliOps
 
-**Intelligent Operations — From Automation to Autonomous Resolution**  
-**Project type:** Innovation challenge prototype | **Environment:** Synthetic banking simulation
+**Intelligent Operations — From Automation to Controlled Resolution**  
+**Project:** Student innovation-challenge prototype  
+**Environment:** Fictional/synthetic banking operations  
+**Documentation snapshot:** 12 November 2026, before Phase 2 live-LLM investigation testing
 
-> **Disclaimer:** OCBC IntelliOps is a student-team concept/prototype. It is not an official OCBC product or a representation of OCBC's internal architecture. All customers, accounts, payments, ledger postings and workflow records used in the demo must be fictional. The system must not connect to live banking infrastructure or execute real financial transactions.
+> **Important:** This is an independent student prototype, **not** an official OCBC product or an account of OCBC's internal systems. Never connect this application to live banking infrastructure, use genuine customer data, or execute real transfers. All payments, accounts, postings, and exceptions are synthetic.
+>
+> **For teammates and coding assistants:** Read [Current implementation status](#current-implementation-status), [System architecture and data modes](#system-architecture-and-data-modes), [Duplicate-transaction scenarios](#duplicate-transaction-scenarios), [AI Investigation Phase 1](#ai-investigation-phase-1-evidence-and-llm-input-separation), and [Engineering guardrails](#engineering-guardrails) **before modifying code**. This README is a handoff based on the existing README, verified API examples and the team's latest test report; it is **not** an automated inventory of the current checkout. Inspect the repository and actual routes/models before making changes.
 
-## Table of contents
+## Contents
 
-1. [Executive summary](#1-executive-summary)
-2. [Problem statement and objectives](#2-problem-statement-and-objectives)
-3. [Scope and delivery status](#3-scope-and-delivery-status)
-4. [System architecture](#4-system-architecture)
-5. [Portals and user interfaces](#5-portals-and-user-interfaces)
-6. [End-to-end business workflow](#6-end-to-end-business-workflow)
-7. [Source-system business flows](#7-source-system-business-flows)
-8. [Exception scenarios](#8-exception-scenarios)
-9. [Exception lifecycle and business rules](#9-exception-lifecycle-and-business-rules)
-10. [AI investigation and autonomous resolution](#10-ai-investigation-and-autonomous-resolution)
-11. [Database design](#11-database-design)
-12. [Technical stack](#12-technical-stack)
-13. [Repository structure](#13-repository-structure)
-14. [Proposed API design](#14-proposed-api-design)
-15. [Security, risk and audit requirements](#15-security-risk-and-audit-requirements)
-16. [Local setup and configuration plan](#16-local-setup-and-configuration-plan)
-17. [Testing and acceptance criteria](#17-testing-and-acceptance-criteria)
-18. [Presentation demonstration script](#18-presentation-demonstration-script)
-19. [Implementation roadmap](#19-implementation-roadmap)
-20. [Glossary](#20-glossary)
+- [Project overview](#project-overview)
+- [Current implementation status](#current-implementation-status)
+- [System architecture and data modes](#system-architecture-and-data-modes)
+- [Portals and roles](#portals-and-roles)
+- [Duplicate-transaction scenarios](#duplicate-transaction-scenarios)
+- [Exception detection and investigation flow](#exception-detection-and-investigation-flow)
+- [AI Investigation Phase 1: evidence and LLM-input separation](#ai-investigation-phase-1-evidence-and-llm-input-separation)
+- [Representative verified cases](#representative-verified-cases)
+- [Backend APIs and source locations](#backend-apis-and-source-locations)
+- [Database and migrations](#database-and-migrations)
+- [Local development and backend connection](#local-development-and-backend-connection)
+- [Testing and verification](#testing-and-verification)
+- [Engineering guardrails](#engineering-guardrails)
+- [Next phase and team handoff](#next-phase-and-team-handoff)
+- [Additional documentation](#additional-documentation)
+- [Glossary](#glossary)
 
----
+## Project overview
 
-## 1. Executive summary
+**OCBC IntelliOps** aims to help banking operations teams **detect, investigate, and safely resolve operational exceptions**, rather than merely display alerts. It correlates synthetic payment-processing records with synthetic core-banking ledger evidence, creates exception cases, and prepares evidence for AI-supported investigation. Later phases will propose, review, execute where explicitly permitted, verify, and audit resolution actions.
 
-**OCBC IntelliOps** is a proposed **agentic operational exception management platform** that detects abnormal events in simulated banking operations, gathers evidence, investigates probable causes, recommends or executes permitted corrective actions, verifies outcomes and maintains an audit trail.
+The visible product has three portals:
 
-Its central value proposition is **resolution, not merely detection**. An alert alone does not solve an operational problem; IntelliOps aims to move suitable exceptions through a controlled workflow to a verified outcome, while escalating cases requiring human judgement or authorization.
+1. **Payment Processing:** Create synthetic payments and inspect payment status, requests, and processing history.
+2. **Core Banking / Ledger:** Inspect fictional accounts, ledger journals, debit/credit entries, and calculated balances.
+3. **IntelliOps:** Detect and review exceptions, retrieve investigation evidence, and eventually run LLM-assisted analysis and controlled resolution.
 
-The demonstration uses three synthetic source systems:
+A workflow-engine simulator is part of the broader design, but its previously proposed end-to-end autonomous retry flow must **not** be treated as a verified deliverable on the basis of this handoff.
 
-1. **Payment Processing** — tracks transfer instructions and processing outcomes.
-2. **Core Banking / Ledger** — tracks fictional accounts and the financial postings associated with transactions.
-3. **Workflow Engine** — tracks operational processes, tasks, required approvals, errors and retries. For the MVP this is a backend simulator, not a separate visible portal.
+### Core principles
 
-The main **IntelliOps portal** consumes evidence from these systems. The presentation also includes lightweight **Payment Processing** and **Core Banking / Ledger** portals, so judges can inspect the records that generated an exception.
+- **Detect with deterministic rules.** Similar-looking payments are *candidates*, not proof of wrongdoing or a financial error.
+- **Investigate from source evidence.** Preserve request identity, event timing, authorization, journal references, and uncertainty.
+- **Verify financial facts in code.** The LLM must not invent ledger totals or authorize accounting changes.
+- **Separate investigation from action.** An AI explanation/recommendation is not permission to execute a reversal or change a balance.
+- **Keep an auditable trail.** Do not silently alter historical postings or exception records.
 
-### Intended user roles
+## Current implementation status
 
-| Role | Primary Responsibilities |
-|---|---|
-| **Operations Analyst** | Monitor operational exceptions, investigate cases, examine AI-generated findings, assign cases, request corrective actions, and escalate unresolved issues. |
-| **Administrator** | Perform all Analyst functions, approve or reject proposed resolution actions requiring human authorization, manage users, configure detection rules and resolution policies, and oversee system operations. 
+This table distinguishes implemented/reported work from independently completed end-to-end outcomes.
 
-### Role-Based Permissions
-
-| Feature / Permission | Operations Analyst | Administrator |
-|---|:---:|:---:|
-| View Overview Dashboard | ✅ | ✅ |
-| View Exception Center | ✅ | ✅ |
-| Investigate Exceptions | ✅ | ✅ |
-| View AI Investigation Results | ✅ | ✅ |
-| Assign and Escalate Cases | ✅ | ✅ |
-| Request Proposed Resolutions | ✅ | ✅ |
-| View Resolution Workflows | ✅ | ✅ |
-| View Approval Center | ✅ (Read-only) | ✅ |
-| Approve Resolution Actions | ❌ | ✅ |
-| Reject Resolution Actions | ❌ | ✅ |
-| View Audit Trail | ✅ | ✅ |
-| View Analytics | ✅ | ✅ |
-| Manage Users and Roles | ❌ | ✅ |
-| Configure Detection Rules | ❌ | ✅ |
-| Configure Resolution Policies | ❌ | ✅ |
-| Manage System Settings | ❌ | ✅ |
-
-## 2. Problem statement and objectives
-
-### Challenge framing
-
-**Problem statement:** How might OCBC use AI agents, automation and data to resolve routine operational exceptions, not merely describe them?
-
-Banks handle recurring operational checks, reconciliations, approvals, handovers and processing failures. Existing automation can complete individual steps without necessarily closing the underlying exception.
-
-### Project objectives
-
-- Detect and classify operational exceptions using explicit, reproducible rules.
-- Collect relevant evidence from multiple synthetic source systems.
-- Use AI to investigate, explain findings and suggest an appropriate next action.
-- Automatically execute **only low-risk, explicitly permitted actions**.
-- Route sensitive, ambiguous or high-impact cases to a human reviewer.
-- Verify that an executed action actually resolved the problem before closing a case.
-- Maintain traceable, timestamped audit records for every important decision and action.
-- Demonstrate reduced manual steps and measured time to resolution.
-
-### Out of scope
-
-- Integration with live OCBC or other banking systems.
-- Real customer information, real accounts or real transfers.
-- Unrestricted automatic reversals, financial postings or balance edits.
-- Autonomous high-risk decisions or bypassing mandatory approvals.
-- A full retail-banking application or production-scale payment infrastructure.
-- Production infrastructure incident management (including server-down recovery) in the initial MVP.
-- Mistaken-recipient recovery as a core MVP scenario; this is a deferred enhancement.
-
-## 3. Scope and delivery status
-
-**Status as of the latest project discussion:**
-
-| Component | Current known status | Next step |
+| Area | Status at handoff | Evidence / limitation |
 |---|---|---|
-| IntelliOps portal | Figma Make UI/prototype exists, including Overview, Exception Center, AI Investigation, Resolution Workflows, Approval Center and Audit Trail views | Validate interactions and connect to backend APIs |
-| Payment Processing portal | Figma Make prototype exists | Refine to a single **Transactions** sidebar page with **Processing History** inside Transaction Details |
-| Core Banking / Ledger portal | Figma Make prototype exists | Keep **Accounts** and **Ledger Journals** as separate navigation items; show entries in journal details |
-| Workflow Engine | Architecture and schema planned | Build backend simulator; no separate UI required |
-| Shared PostgreSQL data | Proposed schema/ERD established | Implement migrations and deterministic seed data |
-| FastAPI services | Proposed | Implement APIs, rules and source simulators |
-| LangGraph AI workflow | Proposed | Integrate after deterministic detection and policy services work |
-| Verified autonomous resolution | Proposed | Deliver the first end-to-end safe retry flow |
+| React/Vite frontend with three portals | Existing implementation | Original README documents the portal shell and screens; inspect current components for exact UI behavior. |
+| FastAPI backend + SQLAlchemy/PostgreSQL | Implemented; connected evidence reads demonstrated | Authenticated investigation-evidence GETs retrieved three existing cases. The team's final verification report states Supabase revision `20261111_08`. This does not automatically prove every frontend route is connected. |
+| Synthetic payment and ledger scenarios | Implemented; A/B/C manually exercised | User verified transactions, journals and balances in the simulator; backend evidence responses for all three cases contain coherent request, event and journal records. |
+| Duplicate detection / paired exception cases | Implemented for tested examples | Three detected cases link both payments and carry neutral `SUSPECTED_DUPLICATE` evidence with root cause `NOT_ESTABLISHED`. Full regression coverage should still be checked in the repository. |
+| AI Investigation **Phase 1: evidence retrieval** | **Verified for three cases** | `GET /api/exceptions/{case_id}/investigation-evidence` returns meaningful structured evidence and financial verification. |
+| AI Investigation **Phase 1: LLM-input separation** | **Reported passed** | Captured actual mocked OpenAI HTTP request bodies for cases A/B/C; 44 tests passed, 0 failed, 0 skipped in the opt-in verification run. No paid API request was made. |
+| Phase 2: real OpenAI reasoning quality | **Not yet verified** | Mocked transport/structured responses do not establish live-model diagnostic accuracy, hallucination resistance, or consistency. |
+| Automated financial remediation / autonomous closure | **Not established by Phase 1** | Do not claim that an AI diagnosis reverses payments, posts corrections, closes cases, or bypasses approvals. |
+| Non-duplicate exception types | Existing options/code paths noted | Normal payment, Missing Ledger Posting, Amount Mismatch, Payment Processing Failure were preserved in the scenario specification; their current E2E status requires separate verification. |
+| Workflow-engine automation, LangGraph orchestration | Earlier architectural plan | Verify actual code before describing these as implemented. The verified Phase 1 provider path uses an OpenAI Responses-compatible HTTP interface, not proof of LangGraph execution. |
 
-> **Important:** A functioning Figma Make interaction may still be backed by local mock state. Do not describe a feature as deployed, integrated or autonomously executing unless it has been tested against the real backend.
+**Scope of verification:** The team-supplied final Phase 1 report describes tests against three **existing** database-backed cases. It reports read-only live GETs, mocked in-process investigation POSTs, and no database writes. The claimed no-leakage result is specific to the inspected code path, data, and injection vectors; it is not a guarantee against future changes.
 
-### MVP scope
-
-- Synthetic payment, ledger and workflow records.
-- One shared, internally consistent dataset for all visible portals and IntelliOps.
-- Transaction and ledger record drill-down.
-- Rule-based exception detection and deduplication.
-- Exception Center with filtering, details and evidence.
-- AI-assisted investigation with structured evidence.
-- One complete, policy-controlled, idempotent workflow-task retry.
-- Human approval/escalation for unsuitable cases.
-- Verification and append-only audit activity.
-
-### Deferred enhancements
-
-- Server/service outage monitoring and safe recovery simulations.
-- Customer-reported mistaken-recipient transfer recovery workflows.
-- Additional integrations, RPA, advanced dashboards and distributed job queues.
-
-## 4. System architecture
-
-Start with a **modular monolith**: one React frontend, one FastAPI backend and one PostgreSQL database with logically separated schemas. This provides clear service boundaries without the overhead of several independent microservices.
-
-```mermaid
-flowchart TB
-    subgraph UI[React + Vite frontend]
-      INT[IntelliOps portal]
-      PAYUI[Payment Processing portal]
-      LEDUI[Core Banking / Ledger portal]
-    end
-    API[FastAPI REST API + authentication/RBAC]
-    UI --> API
-    subgraph SERVICES[Backend modules]
-      PS[Payment simulator]
-      LS[Core banking / ledger simulator]
-      WS[Workflow simulator]
-      DET[Deterministic detection engine]
-      INV[AI investigation / LangGraph]
-      POL[Policy and authorization engine]
-      ACT[Restricted resolution executor]
-      VER[Verification and audit services]
-    end
-    API --> SERVICES
-    PS --> DET
-    LS --> DET
-    WS --> DET
-    DET --> INV
-    INV --> POL
-    POL -->|Approved permitted action| ACT
-    POL -->|Human review needed| API
-    ACT --> VER
-    subgraph DB[(PostgreSQL)]
-      PDB[payments schema]
-      LDB[core_banking schema]
-      WDB[workflows schema]
-      IDB[intelliops schema]
-    end
-    SERVICES <--> DB
-```
-
-**System boundaries:** Source simulators own their respective source records. IntelliOps reads source evidence and issues narrowly scoped, authorized simulator commands. It does not freely mutate payment or accounting records to make reconciliation discrepancies disappear.
-
-### Key integration principle
-
-All portals must reference the same transaction identifiers and database-backed records. For example, `TXN001` in Payment Processing, `payment_ref = TXN001` in Ledger and a linked IntelliOps case refer to the same synthetic event.
-
-## 5. Portals and user interfaces
-
-### 5.1 Global application shell
-
-- Shared global header for **IntelliOps**, **Payment Processing** and **Core Banking / Ledger**.
-- Consistent portal switcher, session/avatar area and **Demo · Synthetic Data** indicator.
-- Portal-specific dark-navy sidebar with consistent styles and route-aware active state.
-- Browser refresh, Back/Forward and portal switching should preserve coherent data and navigation.
-- Cross-portal links should open actual referenced records, not fabricated placeholders.
-
-### 5.2 IntelliOps portal
-
-**Overview / Operations Command Center**
-
-- Summary KPIs and trend visualizations, including exception workload, resolutions, pending approval and investigation activity.
-- Recent recorded activity; values must be calculated consistently from real case data.
-- Demo scenario trigger (permission restricted).
-
-**Exception Center**
-
-- Smart tabs: **All Cases**, **Needs Attention**, **Auto-Resolvable**, **Human Review**, **Closed**.
-- Search and filters for severity, status, category, source system, assignee and time range.
-- Case table: Case ID, Exception Type, Source System, Severity, Status, Assigned To, Detected At, SLA, Actions.
-- Four primary workload KPIs: **Open Cases**, **Investigating**, **Awaiting Approval**, **Closed Today**.
-- Case details drawer with **Overview**, **Source Records**, **Activity**, **Actions**.
-- Case creation reason/detection rule, evidence, owner, current AI agent, SLA, progression and escalation actions.
-
-**AI Investigation**
-
-- Selected case evidence and agent progress.
-- Distinction between observed facts, missing records and AI inference.
-- Root-cause hypothesis, supporting evidence and recommended action.
-- Explicit uncertainty and human review path where needed.
-
-**Resolution Workflows**
-
-- Visualizes proposed action, deterministic policy decision, required approval, execution and verification.
-- A simulation preview must be labeled as a preview; it must not imply that a real corrective action has occurred.
-- Shows failures and retry/escalation options without falsely marking steps completed.
-
-**Approval Center**
-
-- Review pending proposals; approve/reject with reasons and actor/time recording.
-- Does not permit unapproved actions to execute.
-
-**Audit Trail / Analytics**
-
-- Chronological detection, investigation, assignment, approval, execution, verification and closure records.
-- Operational metrics such as median/average resolution duration, successful verified resolutions and human intervention rate.
-
-### 5.3 Payment Processing portal
-
-**Sidebar:** `Transactions` only.
-
-**Transactions page:**
-
-- Summary metrics (total, completed, failed/pending as applicable, linked exceptions).
-- Searchable/filterable transaction table with sender/receiver account, amount, currency, processing status and timestamps.
-- **Create Synthetic Payment** action with controlled scenario selection.
-- Transaction Details drawer with **Overview** and **Processing History** tabs.
-- Linked ledger journal and IntelliOps case navigation where records exist.
-
-**Do not create a separate Processing Events page.** The underlying `payment_processing_events` table remains necessary for evidence and is surfaced under the selected transaction's Processing History.
-
-### 5.4 Core Banking / Ledger portal
-
-**Sidebar:** `Accounts` and `Ledger Journals`.
-
-**Accounts**
-
-- Fictional customer and account reference, currency, opening balance, calculated current balance and account status.
-
-**Ledger Journals**
-
-- Journal reference, linked payment reference, posting status/time, debit/credit totals and reconciliation indicator.
-- Journal Details drawer lists individual debit/credit entries and linked payment/case evidence.
-- No duplicate separate sidebar item required for individual ledger entries.
-
-**Accounting integrity:** A journal can be balanced internally yet fail reconciliation against a payment record. A missing posting must not be displayed as an existing posted journal.
-
-### 5.5 Workflow Engine
-
-Backend simulator only for the initial MVP. It stores processes, tasks, approval requirements, timestamps, retries and error events; IntelliOps monitors these records.
-
-## 6. End-to-end business workflow
+## System architecture and data modes
 
 ```mermaid
 flowchart TD
-    A[Synthetic source event] --> B[Detection engine evaluates rules]
-    B --> C{Exception found?}
-    C -->|No| Z[Record normal outcome]
-    C -->|Yes| D[Create or update deduplicated case]
-    D --> E[Collect source evidence]
-    E --> F[AI investigation and recommendation]
-    F --> G[Deterministic policy / risk assessment]
-    G --> H{Safe and authorized?}
-    H -->|Yes| I[Execute restricted action]
-    H -->|Approval required| J[Human review]
-    H -->|Unsafe / ambiguous| K[Escalate case]
-    J -->|Approved| I
-    J -->|Rejected| K
-    I --> L[Verify actual source-system state]
-    L --> M{Verification passed?}
-    M -->|Yes| N[Close as Resolved]
-    M -->|No| K
-    D --> AUD[Audit events]
-    E --> AUD
-    F --> AUD
-    G --> AUD
-    J --> AUD
-    I --> AUD
-    L --> AUD
-    N --> AUD
-    K --> AUD
+    UI[React + Vite: IntelliOps / Payment Processing / Core Banking]
+    API[FastAPI + role-based demo authentication]
+    PAY[Payment Processing simulator / scenarios]
+    LED[Core Banking / ledger service]
+    DET[Deterministic detection + case persistence]
+    EVID[Investigation evidence collector + financial verification]
+    PROJ[Explicit LLM evidence projection]
+    LLM[OpenAI Responses API: Phase 2 live reasoning to validate]
+    REVIEW[Backend claim validation + human review]
+    DB[(Supabase PostgreSQL: synthetic operational data)]
+    UI --> API
+    API --> PAY
+    API --> LED
+    API --> DET
+    API --> EVID
+    PAY <--> DB
+    LED <--> DB
+    DET <--> DB
+    EVID --> DB
+    EVID --> PROJ
+    PROJ --> LLM
+    LLM --> REVIEW
 ```
 
-### Business steps
+### Backend-connected mode (target default)
 
-1. **Generate or receive a synthetic event** — e.g. completed payment, missing expected posting, mismatched amount or failed workflow task.
-2. **Detect the exception** — a deterministic rule compares authoritative simulator records, status and processing cutoff. Repeated scans must not create duplicate active cases for the same failure.
-3. **Create/assign the case** — source reference, category, exception type, severity, owner/queue and SLA are stored.
-4. **Collect evidence** — fetch related payment, ledger or workflow records and identify exactly what was searched and what was missing.
-5. **Investigate** — AI summarizes confirmed facts, probable root causes, uncertainty and recommended next steps.
-6. **Apply policy** — a deterministic engine decides whether the action is allowed, requires approval or must be escalated. Model confidence alone never authorizes execution.
-7. **Resolve or escalate** — execute narrowly scoped low-risk simulator action; otherwise route to human review.
-8. **Verify** — reread the affected source record and evaluate expected postconditions.
-9. **Close only on justified outcome** — successful verification permits `Closed / Resolved`; a documented false positive may be `Closed / No Action Required`; unsafe or failed cases remain active and assigned/escalated.
-10. **Audit and measure** — all decisions, actions, actor identities and timestamps are recorded.
+- The React UI calls **FastAPI**; backend services own synthetic payment generation, journal validation, detection, and evidence retrieval.
+- **Supabase PostgreSQL** stores the fictional records. Financial balances are derived from appropriate posted ledger entries, not independently changed in the browser.
+- All portals should display the **same payment IDs, journal IDs, and case links** returned by the backend.
+- A failed backend call should show an error; it must **not silently fall back** to locally generated banking records.
 
-## 7. Source-system business flows
+### Browser-only mode (separate simulator)
 
-### 7.1 Payment Processing versus Core Banking
+- A browser-local simulation mode exists in the project. It is useful for offline UI testing and fallback demos.
+- **Browser-only records are not Supabase records.** Success in this mode does not prove backend persistence or API parity.
+- Do not merge browser-local records into server results or describe them as persisted; do not develop new IntelliOps investigation behavior against local mock data while claiming live backend verification.
+- The previously documented frontend configuration switch is `VITE_BANKING_API_URL`; inspect the current frontend mode selection logic before changing it.
 
-These systems both reference transactions but answer different questions:
+### Why the distinction matters
 
-| System | Primary question | Example record |
+AI Investigation must retrieve the actual operational evidence for the case being investigated. A browser-only payment that never reached PostgreSQL cannot be independently retrieved by the database-backed evidence collector.
+
+## Portals and roles
+
+| Portal | Primary surfaces | Notes |
 |---|---|---|
-| Payment Processing | Was a transfer instruction accepted/processed? | `TXN001: Mg Mg -> Su Su, SGD 500, Completed` |
-| Core Banking / Ledger | What accounting effects were posted to the relevant accounts? | Journal linked to `TXN001`, with balanced debit/credit entries |
-| Workflow Engine | Did the required operational processing steps complete correctly and on time? | Task failed due to a simulated temporary error |
+| **IntelliOps** | Overview, Exception Center, AI Investigation, Resolution Workflows, Approval Center, Audit Trail, Analytics | Some screens may be previews; verify actual API integration for each action. |
+| **Payment Processing** | Transactions; Create Synthetic Payment; transaction overview, Processing History and related records | A/B/C scenario selection is under **Duplicate Transaction**. |
+| **Core Banking / Ledger** | Accounts; Ledger Journals; journal details and debit/credit lines | Balanced individual journals are required; a missing/incorrect posting must not be fabricated to reconcile a case. |
 
-**Illustration:** Mg Mg starts with SGD 1,000 and Su Su with SGD 200. A valid completed SGD 500 transfer can result in balances of SGD 500 and SGD 700, supported by appropriately balanced accounting entries. The example is simplified: in real accounting, customer deposits are bank liabilities and debit/credit directions must follow the account classification.
+Two demo roles are documented: **Operations Analyst** (read/investigate/review) and **Administrator** (additional privileged simulation/approval operations where implemented). Enforce permissions on the **server**, not just by hiding UI buttons. The specific investigation route may accept either role depending on current route code.
 
-### 7.2 Payment Processing flow
+## Duplicate-transaction scenarios
 
-1. User creates a **synthetic** payment instruction.
-2. Simulator creates `payment_transactions` record and processing events.
-3. Processing state moves according to the chosen deterministic scenario: Pending -> Processing -> Completed or Failed.
-4. For a normal completed transfer, the accounting simulator posts the required balanced journal atomically.
-5. For a deliberate exception scenario, the simulator modifies the **scenario conditions**, not real bank records, so a genuine detectable discrepancy exists.
-6. IntelliOps detects discrepancies once the configured posting window/cutoff has elapsed.
+The current priority is **Duplicate Transaction**, with three deliberately different explanations. The simulator generates **evidence**; detection must not be supplied with a private, prewritten diagnosis.
 
-### 7.3 Ledger accounting flow
+| | A — Customer Double-Click | B — Automatic Retry Failure | C — Legitimate Repeated Payments |
+|---|---|---|---|
+| Customer intent | Transfer once | Transfer once | Transfer twice independently |
+| Submission source | Two `CUSTOMER` attempts | One `CUSTOMER` attempt, one `SYSTEM` retry | Two independent `CUSTOMER` attempts |
+| Business instruction | Shared anchor | Shared anchor | Two separate instruction anchors |
+| Payment statuses | `Completed` + `Held` | `Completed` + `Completed` | `Completed` + `Completed` |
+| Posted journals | **1** | **2** | **2** |
+| Ledger entries | **2** | **4** | **4** |
+| Effect for transfer amount `A` | Sender −`A`, receiver +`A` | Sender −`2A`, receiver +`2A` | Sender −`2A`, receiver +`2A` |
+| Distinguishing evidence | Delayed client confirmation, second customer submit, duplicate match, hold before posting | Acknowledgment timeout, scheduled system retry, incorrect duplicate-control lookup, second posting | Distinct authorizations, separate instruction IDs, no retry link |
+| Intended investigative interpretation | Duplicate execution prevented | Potential unintended duplicate financial execution | Potential **false-positive** duplicate alert; two postings may both be authorized |
 
-1. Fictional customer owns one or more accounts.
-2. A ledger **journal** groups the accounting lines for one posting event.
-3. Multiple **ledger entries** specify debit/credit amounts and accounts within the journal.
-4. A journal can transition to `Posted` only when accounting validations pass; posted lines should be immutable, with subsequent corrections represented by authorized reversal/adjustment journals.
-5. Current simulated account balances are derived from opening balances and valid posted entries (or kept in sync atomically if cached).
-6. Reconciliation compares a payment's expected financial effects with the actual posted records; matching may need to account for fees, multiple lines, references and currency.
+### Scenario A — Customer double-click; second request held
 
-### 7.4 Workflow Engine flow
+The original payment completes and creates one balanced journal. Client confirmation is delayed and the customer submits again. Duplicate protection recognizes the previously processed business instruction and **holds the second request before posting**. The held payment has no posted journal and does not change the balance. Detecting a possible duplicate does **not** mean a second transfer occurred.
 
-1. Create a workflow instance.
-2. Add ordered/dependent tasks with deadlines, assignment and retry metadata.
-3. Record actual state transitions and error events.
-4. Detect failures, overdue steps or missing required approval.
-5. IntelliOps investigates the task and decides whether a safe idempotent retry is permitted.
-6. Retry through an authorized simulator function, reread the task state and verify completion.
+Relevant event types observed in a tested case include `CLIENT_SUBMISSION`, `CLIENT_CONFIRMATION_DELAYED`, `DUPLICATE_CONTROL_MATCH`, and `DUPLICATE_BLOCKED`.
 
-## 8. Exception scenarios
+### Scenario B — Automatic retry with duplicate posting
 
-### Scenario A — Workflow Processing Failure (**first working autonomous demo**)
+A customer submits once and the original payment posts. An acknowledgment timeout triggers a **system-origin** retry. The synthetic instruction replay check misses an existing execution and a second distinct payment also posts. Both individual journals are balanced, yet the cumulative financial movement exceeds the **single** intended transfer.
 
-**Trigger:** A synthetic task fails with an allowlisted transient service error.
+Relevant observed event types include `ACK_TIMEOUT`, `RETRY_SCHEDULED`, `RETRY_SUBMITTED`, `IDEMPOTENCY_CHECK_FAILED`, and two `LEDGER_POSTING_CONFIRMED` records.
 
-**Evidence:** Task ID, workflow ID, error code, attempt count, execution history, deadline and idempotency declaration.
+**Safety:** The defect is an explicitly controlled *synthetic fault*, not permission to weaken normal idempotency, remove uniqueness constraints, or expose a general bypass in normal payment processing.
 
-**Action:** If the task is explicitly idempotent, has no uncertain financial side effects, remains within retry limits and passes authorization checks, run a bounded retry.
+### Scenario C — Legitimate separate transfers; candidate false positive
 
-**Verification:** Confirm actual task completion; only then close the case. Failed or uncertain outcome leads to investigation/escalation.
+The customer authorizes **two separate** transfers with the same sender, receiver, amount, currency and close timestamps. Both are processed and posted correctly. Similarity-based duplicate detection can still flag the pair, but the investigation must consider **two distinct authorizations and instruction identities**, not assume the second journal is erroneous.
 
-### Scenario B — Missing Ledger Posting
+**Important:** `DOUBLE_POSTING_CONFIRMED` is an **accounting observation**, not a declaration that a transfer is wrongful. For Scenario C, `excessPostingAmount` can correctly remain `null` because there is no verified single-transfer intention from which to compute an excess.
 
-**Trigger:** Payment Processing indicates completion but no corresponding ledger posting is found in the declared search scope after the allowed posting cutoff.
+### Detection requirements
 
-**Evidence:** Payment record, processing completion time, expected accounting reference, ledger lookup window/results and related workflow events.
+- Reuse existing rules/case persistence; do **not** create an exception solely because the simulator knows its scenario label.
+- Candidate matching may use shared original/reference links or matching parties, exact amount/currency, and a configurable time window (120 seconds in the verified case evidence; not a universal banking threshold).
+- One active candidate case per canonical pair, with both payment references; repeated scans must not create duplicates.
+- Detection evidence remains neutral: `classification: SUSPECTED_DUPLICATE` and `rootCause: NOT_ESTABLISHED` until supported investigation.
+- Keep synthetic scenario ground truth separate from operational records and LLM input.
 
-**Action:** Investigate source references and posting delays; safely reconcile metadata only when evidence and rules allow, or escalate to an authorized reviewer.
-
-**Constraint:** Never fabricate financial postings merely to close the exception.
-
-### Scenario C — Amount Mismatch / Unmatched Transaction
-
-**Trigger:** Payment amount/reference does not reconcile against the corresponding **internally balanced** posted journal under configured matching rules.
-
-**Evidence:** Payment amount and currency, journal lines, account references and allowed fees/processing differences.
-
-**Action:** Explain the difference and gather corroborating evidence; require human review for accounting-affecting corrections.
-
-### Scenario D — Missing Required Approval
-
-**Trigger:** A workflow step cannot proceed because an approval is absent or overdue.
-
-**Action:** Route to the correct approver and send a permitted notification; never skip a mandatory approval.
-
-### Deferred scenarios
-
-- **Server down:** Later add service health monitoring, incident correlation, safe recovery/verification and impact analysis.
-- **Wrong recipient:** Later support customer-reported payment-recovery cases, evidence gathering and human-controlled follow-ups; never autonomously debit an unintended recipient.
-
-## 9. Exception lifecycle and business rules
-
-### Primary lifecycle statuses
-
-```text
-Open -> Investigating -> [Awaiting Approval] -> Resolving -> Closed
-             |                  |                |
-             +---- Escalation <-+---- Failure ---+
-```
-
-- **Open:** Detected and awaiting investigation.
-- **Investigating:** Evidence collection and analysis in progress.
-- **Awaiting Approval:** Proposed action requires human signoff.
-- **Resolving:** Authorized action and/or verification in progress.
-- **Closed:** Handling concluded, with explicit closure outcome (`Resolved` or `No Action Required`). 
-
-An escalation is a **routing/attention flag**, not a separate primary lifecycle state. Failed verification is an event and flag, not a successful final status. A case should not be marked resolved when a proposal has merely been generated.
-
-### Smart tabs (derived views, not statuses)
-
-| Tab | Selection logic |
-|---|---|
-| All Cases | All cases within user's access scope |
-| Needs Attention | Active cases urgent due to impact, approaching/breached SLA, failed verification or escalation |
-| Auto-Resolvable | Active cases currently satisfying the permitted-action and evidence requirements |
-| Human Review | Active cases requiring approval or intervention |
-| Closed | Closed cases, including Resolved and No Action Required outcomes |
-
-Tabs can overlap; for example a Human Review case may also need attention. Counts must be calculated from a consistent dataset.
-
-### Priority and SLA
-
-Use Critical/High/Medium/Low severity based on configured operational impact and urgency. SLA = a configured service deadline; show time left, overdue duration or whether it was met. Use a consistent simulation clock for reproducible demos.
-
-## 10. AI investigation and autonomous resolution
-
-### Components and responsibilities
-
-| Component | AI? | Responsibility |
-|---|---|---|
-| Detection Engine | No | Deterministic rules detect exceptions |
-| Evidence Collector | Mostly no | Retrieve and validate relevant source records |
-| Investigation Agent | Yes | Explain findings, hypotheses and evidence gaps |
-| Recommendation Agent | Yes | Suggest low-risk action or escalation |
-| Policy Engine | **No** | Enforce allowlists, limits, roles, idempotency and approvals |
-| Resolution Executor | No | Execute restricted simulator operations |
-| Verification Service | No | Check actual postconditions, re-detect if necessary |
-| Audit Service | No | Record actors, policies, evidence and outcomes |
-
-**LangGraph** is proposed for stateful investigation orchestration and human checkpoints. A first milestone can use deterministic Python logic before adding an LLM, reducing demo risk.
-
-### Example workflow retry policy
-
-Retry only when all conditions hold:
-
-- The task type is on an explicit allowlist.
-- Its retry operation is idempotent by design.
-- The failure code is an approved transient error.
-- The system can establish that prior attempts did not create duplicate irreversible effects.
-- The retry count remains within the configured limit.
-- The case and actor satisfy execution permissions and no required approval is missing.
-- The action uses an idempotency key and is recorded before/while executing.
-
-If any required condition cannot be established, **block the action and escalate**.
-
-### AI evidence principles
-
-- Clearly label **verified evidence**, **missing evidence** and **AI interpretation**.
-- Report missing records as "not found within search scope/time window," not absolute proof of nonexistence.
-- Treat AI recommendations as untrusted proposals until policy validation.
-- Do not claim calibrated confidence percentages without a real calibration method.
-
-## 11. Database design
-
-**Recommended database:** PostgreSQL, using four logical schemas. The initial ERD covers **21 entities**.
-
-### 11.1 `payments` (3 entities)
-
-| Entity | Key columns and purpose |
-|---|---|
-| `payment_transactions` | `payment_id UUID PK`, `transaction_ref VARCHAR(50) UNIQUE`, `sender_account_ref VARCHAR(50)`, `receiver_account_ref VARCHAR(50)`, `amount NUMERIC(18,2)`, `currency CHAR(3)`, `status VARCHAR(30)`, `initiated_at TIMESTAMPTZ`, `completed_at TIMESTAMPTZ NULL`, `created_at TIMESTAMPTZ` |
-| `payment_processing_events` | `event_id UUID PK`, `payment_id UUID FK`, `event_type VARCHAR(50)`, `status VARCHAR(30)`, `error_code VARCHAR(50) NULL`, `message TEXT`, `occurred_at TIMESTAMPTZ` |
-| `payment_batches` | Optional grouping of payment runs; define columns when batch features are implemented |
-
-### 11.2 `core_banking` (4 entities)
-
-| Entity | Key columns and purpose |
-|---|---|
-| `customers` | `customer_id UUID PK`, `customer_ref VARCHAR(50) UNIQUE`, `full_name VARCHAR(150)`, `status VARCHAR(20)`, `created_at TIMESTAMPTZ` |
-| `accounts` | `account_id UUID PK`, `account_ref VARCHAR(50) UNIQUE`, `customer_id UUID FK`, `currency CHAR(3)`, `opening_balance NUMERIC(18,2)`, `status VARCHAR(20)`, `created_at TIMESTAMPTZ` |
-| `ledger_journals` | `journal_id UUID PK`, `journal_ref VARCHAR(50) UNIQUE`, `payment_ref VARCHAR(50) NULL`, `status VARCHAR(20)`, `posted_at TIMESTAMPTZ NULL`, `created_at TIMESTAMPTZ` |
-| `ledger_entries` | `entry_id UUID PK`, `journal_id UUID FK`, `account_id UUID FK`, `entry_type VARCHAR(10)`, `amount NUMERIC(18,2)`, `currency CHAR(3)`, `created_at TIMESTAMPTZ` |
-
-**Journal versus entries:** The journal is the overall accounting group; each entry is an individual debit/credit line. Require balanced postings and never edit posted journal lines directly.
-
-### 11.3 `workflows` (4 entities)
-
-| Entity | Key columns and purpose |
-|---|---|
-| `workflow_instances` | `workflow_id UUID PK`, `workflow_ref VARCHAR(50) UNIQUE`, `workflow_type VARCHAR(50)`, `related_payment_ref VARCHAR(50) NULL`, `status VARCHAR(30)`, `started_at TIMESTAMPTZ`, `completed_at TIMESTAMPTZ NULL` |
-| `workflow_tasks` | `task_id UUID PK`, `workflow_id UUID FK`, `task_name VARCHAR(100)`, `status VARCHAR(30)`, `assigned_to_ref VARCHAR(50) NULL`, `retry_count INTEGER`, `max_retries INTEGER`, `is_idempotent BOOLEAN`, `deadline_at TIMESTAMPTZ NULL`, `error_code VARCHAR(50) NULL` |
-| `workflow_approvals` | `approval_id UUID PK`, `workflow_id UUID FK`, `task_id UUID FK NULL`, `reviewer_ref VARCHAR(50)`, `status VARCHAR(30)`, `requested_at TIMESTAMPTZ`, `decided_at TIMESTAMPTZ NULL`, `deadline_at TIMESTAMPTZ NULL` |
-| `workflow_events` | Append-only task and workflow state changes; define detailed columns during implementation |
-
-### 11.4 `intelliops` (10 entities)
-
-| Entity | Key columns and purpose |
-|---|---|
-| `users` | `user_id UUID PK`, `full_name VARCHAR(150)`, `email VARCHAR(255) UNIQUE`, `password_hash TEXT`, `role VARCHAR(30)`, `team VARCHAR(100) NULL`, `status VARCHAR(20)` |
-| `source_systems` | `source_id UUID PK`, `source_code VARCHAR(50) UNIQUE`, `source_name VARCHAR(100)`, `description TEXT`, `is_active BOOLEAN` |
-| `detection_rules` | `rule_id UUID PK`, `rule_code VARCHAR(50)`, `version INTEGER`, `name VARCHAR(150)`, `category VARCHAR(50)`, `exception_type VARCHAR(80)`, `conditions JSONB`, `default_severity VARCHAR(20)`, `is_enabled BOOLEAN`; unique `(rule_code,version)` |
-| `exception_cases` | `case_id UUID PK`, `case_ref VARCHAR(50) UNIQUE`, `rule_id UUID FK`, `source_id UUID FK`, `related_record_ref VARCHAR(50) NULL`, `exception_type VARCHAR(80)`, `category VARCHAR(50)`, `severity VARCHAR(20)`, `status VARCHAR(30)`, `assigned_user_id UUID FK NULL`, `assigned_queue VARCHAR(80) NULL`, `sla_deadline_at TIMESTAMPTZ NULL`, `detected_at TIMESTAMPTZ`, `closed_at TIMESTAMPTZ NULL`, `closure_outcome VARCHAR(30) NULL`, `review_required BOOLEAN`, `auto_resolution_eligible BOOLEAN`, timestamps |
-| `exception_evidence` | `evidence_id UUID PK`, `case_id UUID FK`, `source_id UUID FK`, `record_ref VARCHAR(50)`, `evidence_type VARCHAR(50)`, `evidence_data JSONB`, `collected_at TIMESTAMPTZ`, `verification_status VARCHAR(30)` |
-| `investigations` | `investigation_id UUID PK`, `case_id UUID FK`, `agent_name VARCHAR(100)`, `status VARCHAR(30)`, `root_cause_summary TEXT NULL`, `recommended_action TEXT NULL`, `confidence NUMERIC(5,4) NULL`, timestamps |
-| `resolution_actions` | `action_id UUID PK`, `action_code VARCHAR(80) UNIQUE`, `name VARCHAR(150)`, `action_type VARCHAR(50)`, `policy_config JSONB`, `requires_approval BOOLEAN`, `is_enabled BOOLEAN` |
-| `resolution_attempts` | `attempt_id UUID PK`, `case_id UUID FK`, `action_id UUID FK`, `idempotency_key VARCHAR(100) UNIQUE`, `status VARCHAR(30)`, `policy_result JSONB`, `execution_result JSONB NULL`, `verification_result JSONB NULL`, timestamps |
-| `case_approvals` | `case_approval_id UUID PK`, `case_id UUID FK`, `action_id UUID FK`, `reviewer_id UUID FK NULL`, `status VARCHAR(30)`, `requested_at TIMESTAMPTZ`, `decided_at TIMESTAMPTZ NULL`, `decision_reason TEXT NULL` |
-| `audit_events` | `audit_id UUID PK`, `case_id UUID FK NULL`, `actor_type VARCHAR(30)`, `actor_ref VARCHAR(100)`, `event_type VARCHAR(80)`, `details JSONB`, `occurred_at TIMESTAMPTZ` |
-
-The above is a **proposed logical schema**, not already-applied migrations. Some optional or less mature entities (such as `payment_batches` and `workflow_events`) still require detailed design. Additional constraints, indexes, actor identity models and explicit case-to-source-record associations should be added during implementation.
-
-### Key relational links
+## Exception detection and investigation flow
 
 ```mermaid
- erDiagram
-    CUSTOMERS ||--o{ ACCOUNTS : owns
-    ACCOUNTS ||--o{ LEDGER_ENTRIES : has
-    LEDGER_JOURNALS ||--|{ LEDGER_ENTRIES : contains
-    PAYMENT_TRANSACTIONS ||--o{ PAYMENT_PROCESSING_EVENTS : generates
-    WORKFLOW_INSTANCES ||--o{ WORKFLOW_TASKS : contains
-    WORKFLOW_INSTANCES ||--o{ WORKFLOW_APPROVALS : requires
-    WORKFLOW_INSTANCES ||--o{ WORKFLOW_EVENTS : records
-    SOURCE_SYSTEMS ||--o{ EXCEPTION_CASES : origin
-    DETECTION_RULES ||--o{ EXCEPTION_CASES : triggers
-    USERS ||--o{ EXCEPTION_CASES : assigned
-    EXCEPTION_CASES ||--o{ EXCEPTION_EVIDENCE : holds
-    EXCEPTION_CASES ||--o{ INVESTIGATIONS : analyzed
-    EXCEPTION_CASES ||--o{ RESOLUTION_ATTEMPTS : resolves
-    RESOLUTION_ACTIONS ||--o{ RESOLUTION_ATTEMPTS : executes
-    EXCEPTION_CASES ||--o{ CASE_APPROVALS : requests
-    EXCEPTION_CASES ||--o{ AUDIT_EVENTS : records
+flowchart TD
+    A[Generate synthetic payment scenario] --> B[Persist payment requests, processing events and ledger evidence]
+    B --> C[Run independent deterministic detection]
+    C --> D[Open deduplicated candidate case]
+    D --> E[Read-only evidence collection]
+    E --> F[Deterministic accounting verification]
+    F --> G[Allowlisted model-evidence payload]
+    G --> H[LLM investigation: Phase 2 real-model validation]
+    H --> I[Validate report claims and citations]
+    I --> J[Human review / future controlled resolution policy]
 ```
 
-**Cross-source links:** `payment_ref`, `transaction_ref` and related record references may be logical business-key correlations rather than direct cross-schema foreign keys. Validate them at service boundaries. Ensure posted journal integrity is enforced transactionally; a UI label is not a substitute for accounting validation.
+Keep **source generation**, **candidate detection**, **evidence collection**, **causal reasoning**, and **authorized remediation** as separate responsibilities. A completed investigation is not a completed financial correction.
 
-## 12. Technical stack
+## AI Investigation Phase 1: evidence and LLM-input separation
 
-| Area | Recommended tool | Notes |
-|---|---|---|
-| Prototyping | Figma Make | Existing designs and local interactions |
-| Frontend | React + Vite | One web app, three portal areas |
-| Frontend language | JavaScript / JSX | Matches current team experience; TypeScript optional later |
-| Styling | Tailwind CSS | Keep existing generated styles/components where possible |
-| Components | Existing components / shadcn/ui | Use shadcn/ui only when helpful; avoid needless rewrites |
-| Icons | Lucide React | Consistent icons |
-| Navigation | React Router | Stable direct URLs and history |
-| Charts | Recharts | Overview and analytics |
-| HTTP client | Fetch or Axios | Choose one and standardize |
-| Backend | Python 3 + FastAPI | Modular REST services |
-| Validation | Pydantic | Typed request/response validation |
-| ORM | SQLAlchemy | Database models and queries |
-| Migrations | Alembic | Versioned database changes |
-| Database | PostgreSQL | Four logical schemas; `NUMERIC` money fields |
-| Agent orchestration | LangGraph | Stateful investigation and optional approval checkpoints |
-| LLM | OpenAI API (or team-approved equivalent) | Evidence-based explanations/recommendations only |
-| Detection/policy | Python deterministic rules | Not delegated to an LLM |
-| Resolution | Restricted Python service functions | Safe simulator actions + verification |
-| Authentication | JWT/session mechanism + secure password hashing | Enforce server-side RBAC |
-| Testing | Pytest, React Testing Library, Playwright | Unit, integration and E2E |
-| Containerization | Docker + Docker Compose | Reproducible local demo |
-| Version control | Git + GitHub | PRs, protected branches, reviews |
-| Optional hosting | Vercel (frontend), Render/Railway (API), managed PostgreSQL | Verify plan limits, sleep behavior and data persistence before demo |
+### Verified evidence API
 
-### Not required for MVP
+`GET /api/exceptions/{case_id}/investigation-evidence`
 
-Microservices, Kafka, Kubernetes, n8n, Celery, Redis, RPA bots and live banking connectors are **not essential**. Add them only when a real requirement justifies the operational complexity.
+The authenticated route returns a structured response for a specific exception case. For the three existing tested cases it contained:
 
-## 13. Repository structure
+- `snapshot.caseRecord`: case identity, linked payment IDs, neutral detection evidence and rule metadata.
+- `snapshot.original` / `snapshot.duplicate`: actual payment references, parties, amount, status, instruction identity and execution timing.
+- `snapshot.requests`: request IDs, `CUSTOMER`/`SYSTEM` origins, shared/separate instruction anchors, retry relationships, authorization IDs and availability flags.
+- `snapshot.events`: event IDs, types, request/payment ownership, timestamps and validated structured data where present.
+- `snapshot.journals` / `snapshot.entries`: posting records, accounts, debit/credit lines and references.
+- `financial_verification`: server-computed posting classifications, journal checks, count and debit/credit totals.
+- `evidence_references`: stable IDs for citing payment, request, event, journal, entry and instruction records.
+- `retrieved_at`: snapshot retrieval timestamp.
 
-The application uses one React frontend and one FastAPI backend, organized by domain.
+**Truthfulness rules:** `outcome: null` with `outcomeAvailability: NOT_RECORDED` means the source lacks a separately recorded **request outcome**; a completed payment is not proof its acknowledgment arrived. Events marked `UNSTRUCTURED` may have empty `sourceData`; do not manufacture missing fields.
+
+### Model-input boundary (final Phase 1 test)
+
+**The analyst GET response is *not* the LLM input.** The implementation projects the collected response to an explicit, restricted model-evidence object before calling the OpenAI-compatible Responses endpoint.
+
+The **captured model `input` string** had exactly four top-level keys:
 
 ```text
-frontend/src/
-  main.jsx
-  app/                       # Shared shell, portal navigation and routing
-  portals/
-    intelliops/              # Operations workspace
-    core-banking/            # Accounts and ledger journals
-    payment-processing/      # Payment transactions
-  shared/
-    components/              # Record drawer and common record views
-    data/                    # Shared synthetic records and integrity tests
-    api/                     # Reserved for backend clients
-  styles.css
+snapshot
+financial_verification
+evidence_references
+retrieved_at
+```
+
+The tested projection **excludes** the following from model evidence:
+
+- `verified_assessment` and legacy selected `root_cause_code`, `diagnosis_classification`, `recommended_action_code` and `required_cause_references`.
+- Raw case evidence, original/raw event descriptions, private scenario labels and expected answers.
+- Audit dictionaries/events and private batch metadata.
+- Unknown nested event/request/journal metadata and unverified additional source fields.
+- Intent-dependent computed `expectedMovementForOneTransfer` and `excessPostingAmount` estimates from the unprojected analyst response.
+
+The GET response intentionally still includes a legacy `verified_assessment` dictionary for compatibility, marked:
+
+```json
+{"verified_assessment_scope": "LEGACY_HEURISTIC_NOT_LLM_INPUT"}
+```
+
+**Never pass the complete analyst GET response directly into an LLM prompt.** Use the existing `model_evidence` projection and inspect the **actual serialized provider request** after any schema changes. The output JSON Schema may *name* root-cause and action fields; defining output properties is not equivalent to feeding a selected diagnosis as evidence.
+
+### Actual call path inspected
+
+1. Authenticated FastAPI GET retrieves case evidence through `investigation_router.collect` and `investigation_evidence.retrieve_evidence`, using a read-only/repeatable-read snapshot.
+2. Test captures that frozen evidence. A local in-process FastAPI `POST /api/exceptions/{case_id}/investigations` consumes it, with the evidence collection boundary mocked to avoid another live database read/write.
+3. `investigation_service.investigate` calls `model_evidence` to build the safe projection.
+4. `InvestigationProvider.analyze` serializes that projection into the Responses request's `input` string.
+5. `httpx.MockTransport` captures the real assembled HTTP body and supplies a scripted structured model response. No paid request was sent.
+
+This verifies **transport serialization and validation**, not actual model reasoning quality.
+
+### Final Phase 1 verification result
+
+Reported by the team's final verification run:
+
+- **44 tests passed; 0 failed; 0 skipped** (three live-case opt-in wire tests plus preceding tests).
+- Three live-case wire tests made **six mocked Responses calls**: clean and nested-poisoned evidence for each case.
+- Clean and poisoned captured model `input` strings were **byte-for-byte identical**; tested private answers/labels did not leak.
+- Each case retained real citation IDs; mocked model claims could cite event, payment, request and journal records.
+- Accounting totals were recomputed separately from entries; relevant FK/ownership relationships were checked.
+- Unfamiliar uppercase root-cause identifiers were supported; hypotheses are not limited to three simulator causes.
+- Tests did not execute paid OpenAI calls, scenario generation, shared DB writes, migrations, financial posting, commits or pushes.
+- Team report states source-table read-only hashes/counts were unchanged and the deployed Supabase revision was `20261111_08`.
+
+**Not established:** Accuracy of live GPT diagnoses; robustness on unseen real-model outputs; semantic truth of every cited sentence; end-to-end user-facing investigation UX; approved remediation or account adjustments.
+
+## Representative verified cases
+
+These are **existing synthetic test cases**, not hardcoded IDs or amounts for application logic.
+
+| Case | Scenario | Request origins | Payments | Journals / entries | Balanced total debits and credits | Financial observation |
+|---|---|---|---|---|---|---|
+| `CASE-000010` | A — customer double-click | `CUSTOMER` / `CUSTOMER` | 1 Completed + 1 Held | 1 / 2 | SGD 25.00 each | One posting, no excess |
+| `CASE-000011` | B — system retry failure | `CUSTOMER` / `SYSTEM` | 2 Completed | 2 / 4 | SGD 20.00 each | SGD 10 intended once, SGD 20 posted; SGD 10 excess |
+| `CASE-000009` | C — independent repeats | `CUSTOMER` / `CUSTOMER` | 2 Completed | 2 / 4 | SGD 6.66 each | Two authorized SGD 3.33 payments; no established excess |
+
+The **actual** evidence JSON has event sequences, UUIDs and journal links. Read it through the API or existing controlled captures instead of duplicating these example values in business logic.
+
+## Backend APIs and source locations
+
+### Endpoints known from implementation discussions / verification
+
+| Method | Route | Purpose / verification status |
+|---|---|---|
+| `GET` | `/api/banking-snapshot` | Frontend connected-mode banking record retrieval; previously tested during connectivity troubleshooting. |
+| `POST` | `/api/demo/payments/scenario` | Existing synthetic scenario-generation contract; inspect current router/schema before using. |
+| `GET` | `/api/exceptions/{case_id}/investigation-evidence` | **Verified** for cases A/B/C with authenticated live GETs. |
+| `POST` | `/api/exceptions/{case_id}/investigations` | Existing Phase 1 service/provider route exercised with frozen evidence and mocked OpenAI HTTP. |
+
+Other payment, detection, journal, approval and resolution routes may exist; **do not infer their exact paths from the previous blueprint**. Confirm in FastAPI `/docs` or router definitions. API access requires the applicable demo authorization token/role.
+
+### Source-code map (verify names against the checkout)
+
+```text
+frontend/
+  src/main.jsx
+  src/portals/payment-processing/CreatePaymentForm.jsx
+  src/portals/payment-processing/TransactionsPage.jsx
+  src/portals/payment-processing/TransactionDetailsDrawer.jsx
+  src/portals/intelliops/ExceptionRecords.jsx
+  src/shared/data/bankingRecords.js
+  src/shared/data/paymentSimulation.js
+  ... (other portal pages and components)
+
 backend/
-  main.py                    # FastAPI entry point and router registration
-  modules/
-    intelliops/models.py     # Detection rules and exception cases
-    core_banking/models.py   # Ledger records
-    payment_processing/      # Transactions, processing events and API routes
-    workflow/                # Reserved for the workflow simulator
-  shared/                    # Database setup and timestamp helper
-  models.py                  # Compatibility exports for existing scripts
-  database.py                # Compatibility exports for existing scripts
-  generate_data.py
+  main.py
+  modules/payment_processing/
+    service.py       # Payment logic
+    api.py           # Payment routes
+    models.py        # Payment/request/event models
+  modules/core_banking/
+    service.py       # Journal posting / balances
+    snapshot.py      # Banking snapshot
+  modules/intelliops/
+    detection.py     # Deterministic exception detection
+    rules.py
+    ...              # Investigation router, evidence, projection, service/provider
+  shared/database.py
+  tests/
+    test_investigation_live_wire.py  # Added by final Phase 1 verification
+    test_investigation*.py           # Other investigation tests
   requirements.txt
 ```
 
-Existing frontend URLs and backend endpoints are preserved. From `backend/`, continue to start the API with `uvicorn main:app --reload` and seed data with `python generate_data.py`. The compatibility exports register all domain models in the same SQLAlchemy metadata; database table names are unchanged. Workflow implementation remains planned.
+**Search actual modules** for `investigation_router.collect`, `investigation_evidence.retrieve_evidence`, `investigation_service.investigate`, `model_evidence`, and `InvestigationProvider.analyze`; their exact source filenames were not supplied in this handoff. Do not create duplicate services or APIs before checking existing code.
 
-Account enhancements and setup are documented in [backend/README.md](backend/README.md), [the migration report](backend/modules/core_banking/MIGRATION_REPORT.md), and [frontend/README.md](frontend/README.md). Apply migrations before starting the API. The frontend supports persistent local simulation and optional authenticated database connection.
+### Verification artifacts (reported paths)
 
-## 14. Proposed API design
-
-**These are suggested endpoints to implement, not a claim that they already exist.** Prefix with `/api` and apply authentication/authorization to sensitive routes.
-
-| Method | Route | Purpose |
-|---|---|---|
-| `GET` | `/api/payments` | List synthetic payments |
-| `POST` | `/api/payments` | Create permitted synthetic payment |
-| `GET` | `/api/payments/{id}` | Transaction details |
-| `GET` | `/api/payments/{id}/events` | Processing History for selected payment |
-| `GET` | `/api/accounts` | List fictional accounts |
-| `GET` | `/api/accounts/{id}` | Account and derived balance |
-| `GET` | `/api/ledger/journals` | List journal groups |
-| `GET` | `/api/ledger/journals/{id}` | Journal and entries |
-| `GET` | `/api/workflows` | List workflow instances |
-| `GET` | `/api/workflows/{id}` | Workflow and task details |
-| `GET` | `/api/exceptions` | Search/filter cases |
-| `GET` | `/api/exceptions/{id}` | Case summary, details and links |
-| `POST` | `/api/exceptions/detect` | Trigger authorized scan for demo/testing |
-| `POST` | `/api/exceptions/{id}/investigate` | Start/resume investigation |
-| `GET` | `/api/exceptions/{id}/evidence` | Return structured evidence |
-| `POST` | `/api/exceptions/{id}/proposals` | Create a resolution proposal |
-| `POST` | `/api/exceptions/{id}/approvals` | Record authorized reviewer decision |
-| `POST` | `/api/exceptions/{id}/resolve` | Attempt allowed action with idempotency key |
-| `GET` | `/api/exceptions/{id}/audit` | Retrieve case audit history |
-| `POST` | `/api/demo/scenarios` | Create deterministic allowed demo scenario |
-
-### Example case response (illustrative)
-
-```json
-{
-  "case_ref": "EX-1001",
-  "exception_type": "Workflow Failure",
-  "category": "Workflow Operations",
-  "source_system": "WORKFLOW",
-  "related_record_ref": "WF-001",
-  "severity": "Medium",
-  "status": "Investigating",
-  "review_required": false,
-  "auto_resolution_eligible": false,
-  "detected_at": "2026-03-18T02:15:00Z"
-}
+```text
+AI_INVESTIGATION_FINAL_WIRE_VERIFICATION.json
+AI_INVESTIGATION_FINAL_WIRE_REPORT.md
+backend/tests/test_investigation_live_wire.py
+logs/phase1-final-llm-input/CASE-000010-clean-request.json
+logs/phase1-final-llm-input/CASE-000011-clean-request.json
+logs/phase1-final-llm-input/CASE-000009-clean-request.json
 ```
 
-The example timestamp is synthetic and not a live incident time. Use a fixed simulation clock for repeatable demos and timezone-aware timestamps in storage.
+The `logs/` captures were reported as **Git-ignored**, so teammates may not receive them through Git. The tracked report/test files should be shared or committed through normal team review if desired. Never commit tokens, live HTTP headers or credentials.
 
-## 15. Security, risk and audit requirements
+## Database and migrations
 
-1. **Synthetic-only data:** Do not store real customer information, banking credentials or production records.
-2. **Server-side authorization:** Roles and permission checks are enforced by the backend, not by hiding buttons.
-3. **Approval gates:** Sensitive actions require recorded review; no model instruction can override policy.
-4. **Action allowlist:** AI cannot invent endpoints or execute arbitrary commands/SQL.
-5. **Idempotency and concurrency:** Prevent duplicate retries and simultaneous conflicting resolution attempts.
-6. **Financial integrity:** Balanced journals, immutable posted entries and no unauthorized account balance changes.
-7. **Auditability:** Append-only event history with actor, timestamp, case, policy decision, execution and verification evidence.
-8. **Secrets management:** Store API keys and database credentials outside source code; never expose LLM keys in the browser.
-9. **LLM safety:** Treat retrieved source text as data, not executable instructions; validate AI tool arguments and outputs.
-10. **Data access:** Limit evidence to appropriate roles and redact sensitive fields even in simulations where useful.
-11. **Failure-safe behavior:** On insufficient evidence, policy timeout, LLM outage or uncertain task state, block action and route for human review.
-12. **Demo isolation:** Scenario generation and reset endpoints must be restricted to demo/test environments.
+- Backend uses **SQLAlchemy** and **Alembic** with **Supabase PostgreSQL** as the intended authoritative synthetic operational database.
+- The team's latest verified deployed revision was reported as **`20261111_08`** on 12 November 2026. This is a **point-in-time report**, not an instruction to migrate or proof every environment matches.
+- Existing records include payments/instructions, request history, processing events, accounts, ledger journals/entries, exception cases and evidence-related records. The project also has batch and audit infrastructure.
+- The original README's four-schema/21-entity ERD was an **early proposal** and must **not** be treated as the current physical schema. Use **actual SQLAlchemy models and Alembic history** for schema truth.
+- Do not reset/seed shared Supabase, delete historical rows, modify posted entries, or automatically apply migrations to a shared environment.
+- For schema verification, compare `alembic current`/`alembic heads` (as configured in this repo) with the database's `alembic_version`. Check the project's migration documentation before running upgrade commands.
+- Monetary correctness: use exact decimal amounts, valid journal-to-payment associations, separately balanced debit/credit totals, and ledger-derived balances. A balanced journal can still be the *wrong* financial execution.
 
-## 16. Local setup and configuration plan
+## Local development and backend connection
 
-> This repository README is currently an **architecture and implementation blueprint**. Commands below are the intended setup workflow after the relevant files are added; they are **not verified working commands for the current Figma Make prototype**.
+> Commands below are local-development guidance based on the team's previously used setup. Confirm your active virtual environment, configured ports, dependencies and current repo scripts. **Never paste secret `.env` values into chat or commit them.**
 
 ### Prerequisites
 
-- Recent supported Node.js LTS and npm.
-- Supported Python 3.x version.
-- PostgreSQL (or Docker Desktop with Docker Compose).
-- Git.
-- Optional LLM API key for AI explanations.
+- Git, Node.js/npm, Python and an appropriate virtual environment.
+- Access to the team's **synthetic** Supabase project and correct local backend environment configuration.
+- Admin or Analyst demo role token according to the operation being tested.
+- Optional OpenAI API key **only** for Phase 2 real-model tests; Phase 1 mocked tests do not require paid calls.
 
-### Planned environment variables
+### Backend configuration
 
-Create local `.env` files from templates; **never commit actual secrets**.
-
-```dotenv
-# backend/.env.example
-DATABASE_URL=postgresql+psycopg://intelliops:change_me@localhost:5432/intelliops
-JWT_SECRET_KEY=replace-with-long-random-secret
-OPENAI_API_KEY=
-APP_ENV=development
-DEMO_MODE=true
-DEMO_CLOCK=2026-03-18T10:30:00+08:00
-FRONTEND_ORIGIN=http://localhost:5173
-```
+Use the existing `backend/.env` and project example/configuration code. Common keys in the team's setup include:
 
 ```dotenv
-# frontend/.env.example
-VITE_API_BASE_URL=http://localhost:8000/api
+# Illustrative variable names only — never commit real values
+DATABASE_URL=<server-side-Supabase-PostgreSQL-URL>
+INTELLIOPS_ANALYST_TOKEN=<new-private-analyst-token>
+INTELLIOPS_ADMIN_TOKEN=<new-private-admin-token>
+OPENAI_API_KEY=<server-side-key-for-optional-live-tests>
 ```
 
-### Planned startup sequence
+The **entire** database URL and OpenAI API key belong **only in backend configuration**, not in `VITE_*` variables. If credentials were previously shared accidentally, rotate them before team handoff. Follow current application config for any additional required settings and model selection.
 
-1. Run PostgreSQL (preferably via Docker Compose).
-2. Install backend dependencies, configure the database URL and apply Alembic migrations.
-3. Seed reproducible fictional customers, accounts, payments, journals, workflow tasks and detection rules.
-4. Start FastAPI and verify `/docs` plus health checks.
-5. Install frontend dependencies and start the Vite development server.
-6. Create a demo scenario, trigger exception detection and check that all portals show the same source references.
-7. Execute a permitted resolution and verify database changes, case outcome and audit events.
+### Start backend
 
-Do not add precise CLI commands to this document until `package.json`, backend dependency files, migration configuration and Docker Compose have been committed and tested.
+From the repository root on Windows PowerShell:
 
-## 17. Testing and acceptance criteria
+```powershell
+cd backend
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8081
+```
 
-### Backend tests
+Use `8000` or another port if that is the configured local backend port. Open `http://127.0.0.1:8081/docs` to inspect **actual registered endpoints** and authenticate via Swagger's **Authorize** action with the correct **current** role token. If Swagger uses HTTP Bearer, normally provide the token value without a `Bearer ` prefix in its value field.
 
-- Payment creation validates positive amount, currency and account references.
-- Synthetic scenario generation is deterministic and reproducible.
-- Balanced journal posting is enforced; invalid journals cannot be posted.
-- A posting gap after the configured cutoff produces a case; before cutoff it does not.
-- Correctly matched payment and ledger records do not trigger false mismatches.
-- A repeated detection scan does not create a duplicate open case.
-- A workflow retry is blocked for non-idempotent, unauthorized or exhausted tasks.
-- An approved retry changes actual simulator state and is independently verified.
-- Failed verification never marks the case resolved.
-- Reviewer decisions and all execution events appear in audit history.
+### Start frontend in connected mode
 
-### Frontend tests
+The team has used `VITE_BANKING_API_URL` to enable the existing backend banking data path. If consistent with current frontend configuration, set in `frontend/.env.local`:
 
-- Shared global navigation works across all three portals.
-- IntelliOps sidebar is preserved; Payments has **Transactions**; Ledger has **Accounts** and **Ledger Journals**.
-- Transaction Details displays only the selected payment's Processing History.
-- Clicking payment/journal/case references opens the correct related record.
-- Filters, search, counts, sorting and active navigation are derived from shared data.
-- No broken routes after refresh or browser Back/Forward.
-- Approval and resolution buttons reflect permission, policy and case status.
-- Timestamps and SLA calculations use a consistent demo clock.
+```dotenv
+VITE_BANKING_API_URL=http://127.0.0.1:8081
+```
 
-### End-to-end MVP definition of done
+Then from repository root:
 
-A judge can:
+```powershell
+cd frontend
+npm.cmd install
+npm.cmd run dev
+```
 
-1. Open a source portal and see a coherent synthetic transaction or workflow.
-2. Create a controlled exception.
-3. See a matching case appear in IntelliOps.
-4. Open the case and inspect the evidence from the source systems.
-5. View an investigation and recommended next action.
-6. Observe a permitted safe resolution **or** justified human escalation.
-7. See verification and corresponding audit records.
-8. Confirm the source record and IntelliOps case remain consistent across pages.
+Restart Vite when changing its environment variables. Confirm the UI is in **backend-connected mode**, authenticate, and check the banking snapshot/network requests. The frontend should show an error if backend authentication or database access fails, rather than quietly generating different local records.
 
-## 18. Presentation demonstration script
+### Troubleshooting
 
-### Recommended demo 1: verified autonomous workflow retry
+| Symptom | Check first |
+|---|---|
+| `401 Unauthorized` | Correct Bearer token and header, correct active backend `.env`, restart after token rotation. |
+| `403 Forbidden` | Role/permission for requested endpoint. |
+| `503 Service Unavailable` | Supabase connectivity and backend error logs; inspect DB URL/SSL/username and network reachability **without exposing secrets**. |
+| Swagger endpoint missing | FastAPI router registration and actual route path. |
+| Browser shows different transactions after refresh | Confirm `VITE_BANKING_API_URL`, active mode, API response, and no silent local fallback. |
+| Duplicate case missing | Verify scenario generation, then separately trigger/run backend detection and inspect case persistence. |
+| Supabase schema error | Compare model definitions with deployed migration revision; do not run destructive fixes. |
 
-1. Show a normal workflow with a known task sequence.
-2. Generate a synthetic transient failure for one idempotent task.
-3. Open IntelliOps Exception Center and show the detected case.
-4. Open AI Investigation and display the observed error, history and recommendation.
-5. Show the policy check: permitted error, safe retry, authorized actor, retry limit.
-6. Execute the retry through the simulator.
-7. Refresh source task state and show that verification succeeded.
-8. Show case closure and the audit log of each step.
+## Testing and verification
 
-**Key message:** IntelliOps performs and verifies a controlled resolution rather than merely suggesting a fix.
+### Phase 1 investigation tests
 
-### Recommended demo 2: cross-system reconciliation
+The final report gives this Windows command from `backend/`:
 
-1. Open Payment Processing and show `TXN001` as completed.
-2. Open Core Banking / Ledger and inspect the corresponding journal and entries.
-3. Generate a Missing Ledger Posting or Amount Mismatch scenario using controlled test data.
-4. Return to IntelliOps, trigger detection and open the case.
-5. Show the exact difference between expected and observed evidence.
-6. Demonstrate escalation or a narrowly approved nonfinancial correction if the scenario supports it.
-7. Show the audit history, emphasizing financial integrity and human oversight.
+```powershell
+..\venv\Scripts\python.exe -B -m unittest discover -s tests -p 'test_investigation*.py' -v
+```
 
-**Key message:** AI gathers and explains evidence across systems while deterministic checks preserve control.
+It assumes `..\venv\Scripts\python.exe` is the correct virtualenv interpreter. Adjust the path if your environment differs. The existing-case wire tests are **opt-in** via `INTELLIOPS_VERIFY_EXISTING_CASES=1` and need a valid demo token in the process environment. **Without opt-in, the three live-case tests skip.** Do not claim 44/44 if running in a different environment or if the integration cases were skipped.
 
-### Presentation cautions
+The reported 44-pass run deliberately enabled those tests and used only read-only live evidence GETs plus mocked OpenAI POSTs. Do not point mutating tests at shared Supabase; use disposable DB fixtures.
 
-- State clearly that the three portals are **simulated source systems**.
-- Do not describe prototype-local state changes as verified backend or real bank actions.
-- Do not claim a ledger posting was repaired if only an exception status changed.
-- Keep a deterministic demonstration dataset and a safe reset mechanism.
-- Prepare a fallback that shows the non-LLM deterministic flow if an API becomes unavailable.
+### Manual backend evidence check
 
-## 19. Implementation roadmap
+1. Start FastAPI and confirm PostgreSQL reads succeed.
+2. Open `/docs`, authorize, and find `GET /api/exceptions/{case_id}/investigation-evidence`.
+3. Test `CASE-000010`, `CASE-000011`, and `CASE-000009` **if those synthetic cases exist in your connected database**.
+4. Inspect `snapshot.requests`, `snapshot.events`, `snapshot.journals`, `snapshot.entries`, `financial_verification`, and `evidence_references`.
+5. Check the observed counts/amounts against the [representative cases](#representative-verified-cases); do not confuse `financial_verification` with causal diagnosis.
+6. Independently verify the *model-projected request* through the test/capture path when changing evidence adapters. A successful GET alone **does not** prove LLM-input separation.
 
-| Phase | Deliverable | Suggested focus |
-|---|---|---|
-| **1 — Foundation** | FastAPI project, PostgreSQL schemas, migrations, seeds | Shared source-of-truth data |
-| **2 — Source simulators** | Payment, Ledger and Workflow modules with working APIs | Deterministic normal/exception scenarios |
-| **3 — Detection** | Rule engine, deduplication, case creation, evidence | Exception Center backed by real API |
-| **4 — First resolution** | Idempotent workflow retry, policy check, verification, audit | One complete demonstrable autonomous cycle |
-| **5 — AI integration** | LangGraph investigation and recommendations | Explainable evidence-backed analysis |
-| **6 — Human controls** | Approval Center, reviewer permissions and escalation | Safe handling of sensitive cases |
-| **7 — Full UI integration** | All three portals using same dataset and links | Reliable demo navigation |
-| **8 — QA & deployment** | Automated tests, Docker, optional hosted demo | Reproducible presentation |
-| **Future** | Server outage, mistaken-transfer recovery and advanced reporting | Only after MVP is stable |
+### Tests still needed for Phase 2 and later
 
-### Recommended order for the next coding session
+- Real OpenAI model diagnosis for all three scenarios using existing evidence (with human review).
+- Unfamiliar causes, missing/ambiguous evidence, and attempts at prompt injection through source data.
+- Correct citation grounding **and semantic accuracy**, not just that IDs exist.
+- Output validation, retry/failure behavior, response latency, API cost and model configuration.
+- No financial action without deterministic policy, authorization, idempotency and verification.
+- End-to-end connected frontend/backend consistency, refreshed sessions, and team-demo resilience.
 
-**First:** Implement the database-backed workflow-task failure and a simple deterministic resolution path. **Second:** Connect the existing Figma frontend to the shared FastAPI data. **Third:** add cross-system reconciliation scenarios and AI investigation.
+## Engineering guardrails
 
-## 20. Glossary
+1. **Inspect the current checkout first.** Check branch, working tree, existing models, API routers, migrations, tests and teammate changes. Never rebuild existing modules unnecessarily.
+2. **No real bank data or systems.** All source systems are synthetic; the bank name is contextual only.
+3. **Database is authoritative in connected mode.** Do not mix browser-local and Supabase records or fake successful persistence.
+4. **Scenario creation ≠ detection.** Generated scenario type/expected root cause must remain private simulator metadata; detection independently produces a neutral candidate.
+5. **No answer leakage.** The LLM must receive only the existing allowlisted `model_evidence` projection; do not pass `verified_assessment` or unprojected case/event/audit dictionaries.
+6. **Deterministic accounting integrity.** Never let AI invent financial totals, directly edit balances, mutate posted journal lines or bypass normal validation.
+7. **Review before action.** Investigation recommendations are hypotheses. Only explicitly permitted operations may proceed under backend policy and necessary human approval; Phase 1 does **not** authorize remediation.
+8. **Retain source provenance and uncertainty.** Do not turn a missing request acknowledgment into a confirmed delivery, or turn two posted journals into automatic proof of wrongdoing.
+9. **Protect secrets.** Rotate exposed role tokens, keep API/database credentials server-side, exclude `.env`, captures with headers, and secrets from Git.
+10. **No destructive operations without approval.** Do not truncate shared Supabase, auto-migrate unverified DBs, reseed populated tables, push/commit automatically, or overwrite teammates' uncommitted work.
+11. **Test on the actual path.** Unit tests alone do not prove browser/backend parity, real-model quality or authorization outcomes.
+12. **Communicate verification honestly.** Explicitly label implemented, tested with mocks, live read-only verified, planned, and not yet tested.
+
+## Next phase and team handoff
+
+### Immediate priority: Phase 2 — live LLM investigation
+
+Phase 1 evidence retrieval and model-input sanitization have passed the reported verification. The next work should **reuse** the current collector, financial-verification logic, `model_evidence` adapter, investigation service/provider and report validator rather than rebuild them.
+
+Phase 2 should:
+
+1. Execute **controlled real OpenAI API tests** using server-side credentials and small synthetic cases; record the actual model name configured in backend code, token/cost usage and output validation.
+2. Require the model to produce **evidence-cited** facts, causal hypotheses, alternative explanations, uncertainty and review recommendations.
+3. Compare A, B and C without giving the model simulator scenario codes or legacy diagnoses. In C, two valid postings do **not** imply a duplicate error.
+4. Evaluate at least one **unseen cause** and one **insufficient-evidence** case; safe uncertainty is preferable to fabricated certainty.
+5. Verify every cited source ID belongs to the case and audit the factual accuracy of explanations against the actual evidence.
+6. Keep ledger changes, reversals, approvals and automated case closure **out of scope** unless a separate deterministic, tested, authorized resolution workflow is implemented.
+7. Keep a record of tests and limitations that future teammates or coding assistants can reproduce.
+
+### Suggested handoff checklist for a teammate or GenAI coding tool
+
+Before changing code, establish:
+
+- The exact active branch, uncommitted changes and the latest merge history.
+- Whether the frontend is using browser-only or FastAPI-connected mode.
+- Whether the intended PostgreSQL instance is isolated test data or shared Supabase.
+- The currently registered API route names, schemas and authentication requirements.
+- Actual deployed Alembic revision vs current code migration head.
+- Existing `model_evidence` allowlist and mocked HTTP wire tests.
+- Whether requested work is **Phase 2 diagnosis**, **frontend integration**, or **future resolution**; keep these scopes separate.
+
+**Do not treat an earlier README proposal as a source-of-truth implementation contract when current code disagrees.** Resolve discrepancies by inspecting running code, migration state and tests; document any uncertainty.
+
+## Additional documentation
+
+The original README refers to additional repository documents that may contain detailed implementation information. Confirm these files exist on your branch:
+
+- [`backend/README.md`](backend/README.md) — backend setup/configuration.
+- [`frontend/README.md`](frontend/README.md) — frontend configuration and data modes.
+- [`backend/PAYMENTS.md`](backend/PAYMENTS.md) — payment simulation and processing contract (referenced by original README).
+- [`backend/modules/core_banking/MIGRATION_REPORT.md`](backend/modules/core_banking/MIGRATION_REPORT.md) — earlier core-banking migration notes.
+- `AI_INVESTIGATION_FINAL_WIRE_REPORT.md` — reported final Phase 1 verification narrative.
+- `AI_INVESTIGATION_FINAL_WIRE_VERIFICATION.json` — reported machine-readable verification results.
+
+## Glossary
 
 | Term | Meaning |
 |---|---|
-| **Exception** | An event or discrepancy requiring investigation or controlled handling |
-| **Incident** | An operational disruption, potentially affecting multiple tasks or cases |
-| **Payment Processing** | System coordinating and recording transfer instruction processing |
-| **Core Banking** | Banking-account systems managing customer accounts and balances |
-| **Ledger** | Accounting record of debit/credit movements |
-| **Opening Balance** | Account balance at the start of the simulation or accounting period |
-| **Journal** | Accounting transaction group containing one or more entries |
-| **Ledger Entry** | Individual debit/credit line for a specific account |
-| **Reconciliation** | Comparing source and accounting records for completeness and consistency |
-| **Workflow Instance** | One execution of a defined operational process |
-| **Workflow Task** | One step within a workflow |
-| **SLA** | Defined service deadline or target for handling an exception |
-| **Idempotency** | Executing the same operation multiple times does not create duplicate intended effects |
-| **Escalation** | Routing a case to a human/team with the needed authority or expertise |
-| **Human in the loop** | Required human review or approval for certain decisions/actions |
-| **Verification** | Rechecking actual system state after an action to confirm its outcome |
-| **Audit Trail** | Chronological, attributable record of material events and decisions |
-| **Modular monolith** | Single deployable backend with clearly separated internal modules |
+| **Synthetic payment** | Fictional transfer recorded only inside the demo's simulated systems. |
+| **Payment request** | A submitted attempt (`CUSTOMER` or `SYSTEM`) to process a business instruction; multiple attempts can relate to one intent. |
+| **Business instruction / intent** | The underlying customer-authorized transfer being requested; distinct authorizations help distinguish legitimate repeats. |
+| **Idempotency** | A repeated equivalent request should not cause an unintended extra financial effect. |
+| **Held payment** | Processing was deliberately prevented **before** a second financial posting. |
+| **Journal** | Accounting posting group containing debit/credit entries. |
+| **Ledger entry** | Individual debit or credit line belonging to a journal. |
+| **Double posting** | Two actual postings; whether one is **erroneous** depends on proven business intent. |
+| **Candidate duplicate** | Pair flagged by deterministic detection but not yet conclusively diagnosed. |
+| **Evidence projection** | Explicit safe subset of collected records serialized for the LLM. |
+| **Financial verification** | Server-computed accounting facts; distinct from AI root-cause inference. |
+| **Human-in-the-loop** | Analyst/administrator reviews or approves sensitive decisions before any permitted action. |
 
 ---
 
-**Project principle:** *Detect accurately. Investigate with evidence. Act only within policy. Verify the real outcome. Audit every step.*
-
-
-Payment creation, processing history, five controlled source scenarios, independent exception detection and cross-portal case links are documented in [backend/PAYMENTS.md](backend/PAYMENTS.md). Apply both additive migrations before backend startup and configure the demo role tokens. AI orchestration and autonomous correction remain planned.
+**Project principle:** *Detect accurately. Investigate with evidence. Act only within policy. Verify the actual outcome. Audit every step.*

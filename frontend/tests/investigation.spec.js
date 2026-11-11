@@ -109,7 +109,7 @@ test('real shared duplicate opens directly, uses source links and never invents 
   await expect(page.getByRole('dialog')).toContainText('TXN-');
   await page.goBack();
   await page.locator('.inv-payment-pair').getByRole('link', { name: 'JRN-', exact: false }).first().click();
-  await expect(page.getByRole('dialog')).toContainText('JRN-');
+  await expect(page.getByRole('heading', { name: 'Backend connection required' })).toBeVisible();
   await page.goBack();
   await page.getByRole('link', { name: 'Back to Exception Center' }).click();
   await expect(page).toHaveURL(/page=2&status=OPEN/);

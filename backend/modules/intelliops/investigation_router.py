@@ -7,6 +7,7 @@ from .service import CaseError
 from .investigation_evidence import retrieve_evidence
 from .investigation_llm import get_investigation_provider
 from .investigation_service import investigate
+from .investigation_schemas import InvestigationEvidenceOut
 
 router = APIRouter(prefix="/api/exceptions", tags=["Duplicate Investigation"])
 
@@ -22,7 +23,7 @@ def collect(db, case_id):
     return evidence
 
 
-@router.get("/{case_id}/investigation-evidence")
+@router.get("/{case_id}/investigation-evidence", response_model=InvestigationEvidenceOut)
 def investigation_evidence(case_id: str, db: Session = Depends(get_db), role=Depends(actor)):
     try:
         return collect(db, case_id)

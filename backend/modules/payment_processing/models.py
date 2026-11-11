@@ -32,6 +32,7 @@ class ProcessingEvent(Base):
     __tablename__ = "processing_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[UUID | None] = mapped_column(ForeignKey("payment_requests.request_id"), index=True)
     transaction_id: Mapped[int] = mapped_column(
         ForeignKey("transactions.id"), index=True
     )
@@ -65,6 +66,9 @@ class PaymentInstruction(Base):
 class ExceptionBatch(Base):
     __tablename__ = "exception_batches"
     batch_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    run_key: Mapped[str | None] = mapped_column(String(100), unique=True)
+    input_fingerprint: Mapped[str | None] = mapped_column(String(64))
+    private_metadata: Mapped[dict | None] = mapped_column(JSON)
     requested_scenarios: Mapped[list] = mapped_column(JSON)
     count_per_type: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="COMPLETED")
@@ -80,3 +84,20 @@ class ExceptionBatchItem(Base):
     transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id"), unique=True)
     scenario_code: Mapped[str] = mapped_column(String(50))
     sequence: Mapped[int] = mapped_column(Integer)
+
+
+class PaymentRequestHistory(Base):
+    __tablename__ = "payment_requests"
+    request_id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    business_instruction_id: Mapped[UUID] = mapped_column(ForeignKey("payment_instructions.payment_id"), index=True)
+    payment_id: Mapped[UUID] = mapped_column(ForeignKey("payment_instructions.payment_id"), index=True)
+    origin: Mapped[str] = mapped_column(String(10))
+    retry_of_request_id: Mapped[UUID | None] = mapped_column(ForeignKey("payment_requests.request_id"), index=True)
+    submitted_idempotency_key: Mapped[str] = mapped_column(String(100))
+    authorization_id: Mapped[UUID | None] = mapped_column(Uuid, unique=True)
+    correlation_id: Mapped[UUID | None] = mapped_column(Uuid)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now)
+    __table_args__ = (
+        CheckConstraint("origin IN ('CUSTOMER', 'SYSTEM')", name="ck_request_origin"),
+        CheckConstraint("retry_of_request_id IS NULL OR (origin = 'SYSTEM' AND retry_of_request_id <> request_id)", name="ck_request_retry"),
+    )

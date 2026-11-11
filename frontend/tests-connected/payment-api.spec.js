@@ -7,6 +7,11 @@ test('authenticated browser creates backend payments and traces actual failure c
   await page.getByRole('button', { name: 'Connect to Demo Backend' }).click();
   await expect(page.getByRole('heading', { name: 'Transaction register' })).toBeVisible();
   await expect(page.getByText(/Authenticated ADMIN/)).toBeVisible();
+  const openingCents = await page.evaluate(async () => {
+    const response = await fetch('/backend/api/banking-snapshot', { headers: { Authorization: `Bearer ${sessionStorage.getItem('intelliops-api-token')}` } });
+    return (await response.json()).accounts.find(a => a.id === 'ACC-100001').authoritativeBalance.current;
+  });
+  const amount = cents => `SGD ${(cents / 100).toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   await page.getByRole('button', { name: 'Generate Exception Batch' }).click();
   await page.getByRole('checkbox', { name: /Duplicate Transaction/ }).uncheck();
   await page.getByRole('checkbox', { name: /Payment Processing Failure/ }).uncheck();
@@ -27,7 +32,7 @@ test('authenticated browser creates backend payments and traces actual failure c
   await page.reload();
   await expect(page.getByRole('dialog')).toContainText('SGD 25.00');
   await page.goto('/core-banking/accounts');
-  await expect(page.locator('tbody tr').filter({ hasText: 'Alex Tan' })).toContainText('SGD 44,025.00');
+  await expect(page.locator('tbody tr').filter({ hasText: 'Alex Tan' })).toContainText(amount(openingCents + 2500));
   await page.goto('/payments/transactions');
   await page.getByRole('button', { name: 'Create Synthetic Payment', exact: true }).click();
   await page.getByLabel('Sender account', { exact: true }).selectOption('ACC-100003');
@@ -53,6 +58,6 @@ test('authenticated browser creates backend payments and traces actual failure c
   await page.getByRole('button', { name: 'Close Resolved Case' }).click();
   await expect(page.getByRole('dialog')).toContainText('CLOSED');
   await page.goto('/core-banking/accounts');
-  await expect(page.locator('tbody tr').filter({ hasText: 'Alex Tan' })).toContainText('SGD 44,035.00');
+  await expect(page.locator('tbody tr').filter({ hasText: 'Alex Tan' })).toContainText(amount(openingCents + 3500));
   expect(reference).toMatch(/^TXN-/);
 });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import RecordDrawer from './RecordDrawer';
 import { accounts, backendConnected, money, postingTime, postTransfer, refreshBackend, useBankingRecords, validJournal } from '../data/bankingRecords.js';
@@ -12,28 +12,6 @@ export default function BankingRecords({ payments = false }) {
   const selected = rows.find(r => r.id === id);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
-  useEffect(() => {
-    if (!backendConnected) return;
-    let active = true;
-    let pending = false;
-    const refresh = async () => {
-      if (pending || document.visibilityState === 'hidden') return;
-      pending = true;
-      try { await refreshBackend(); if (active) setError(''); }
-      catch (error) { if (active) setError('Unable to refresh records: ' + error.message); }
-      finally { pending = false; }
-    };
-    refresh();
-    const timer = setInterval(refresh, 10000);
-    window.addEventListener('focus', refresh);
-    document.addEventListener('visibilitychange', refresh);
-    return () => {
-      active = false;
-      clearInterval(timer);
-      window.removeEventListener('focus', refresh);
-      document.removeEventListener('visibilitychange', refresh);
-    };
-  }, []);
   const close = () => { const next = new URLSearchParams(params); next.delete(key); setParams(next, { replace: true }); };
   function submit(event) {
     event.preventDefault();

@@ -7,6 +7,7 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import unittest
+import json
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -64,7 +65,11 @@ class PostgreSQLDetectionTests(unittest.TestCase):
             for name in inspect(conn).get_table_names(schema=self.schema):
                 if name not in {"alembic_version", "detection_rules", "detection_observations"}:
                     # PostgreSQL normalizes JSON representation and exact numeric values.
-                    snapshot[name] = sorted(conn.execute(text(f'SELECT row_to_json(t)::text FROM "{name}" t')).scalars())
+                    records = conn.execute(text(f'SELECT row_to_json(t)::text FROM "{name}" t')).scalars().all()
+                    # Additive nullable columns and new empty tables do not rewrite
+                    # historical evidence. Compare every existing non-null value.
+                    if records:
+                        snapshot[name] = sorted(json.dumps({k: v for k, v in json.loads(row).items() if v is not None}, sort_keys=True) for row in records)
             return snapshot
 
     def balances(self):
@@ -93,11 +98,29 @@ class PostgreSQLDetectionTests(unittest.TestCase):
     def populated_legacy(self, called=False, ahead=None):
         self.upgrade("20261103_06")
         now = datetime(2026, 11, 3, 3, tzinfo=timezone.utc)
-        with Session(self.engine) as db, db.begin():
-            seed_demo(db)
-            create_payment(db, PaymentRequest(sender_account_ref="ACC-100003", receiver_account_ref="ACC-100001",
-                           amount="123.45", idempotency_key="migration-existing-payment"), "ADMIN", "NORMAL", now)
+        # Frozen revision-06 source fixture. Current services correctly require the
+        # new schema and must not be used to fabricate a pre-migration database.
         with self.engine.begin() as conn:
+            owner, sender, receiver, payment, journal = [uuid4() for _ in range(5)]
+            conn.execute(text("INSERT INTO customers (customer_id,customer_ref,customer_name,customer_type,status,created_at) "
+                              "VALUES (:owner,'MIGRATION-OWNER','Existing synthetic owner','INDIVIDUAL','Active',:now)"), {'owner': owner, 'now': now})
+            conn.execute(text("INSERT INTO accounts (account_id,account_ref,customer_id,customer_type,account_type,currency,opening_balance,status,created_at) "
+                              "VALUES (:sender,'MIGRATION-SENDER',:owner,'INDIVIDUAL','SAVINGS','SGD',1000,'Active',:now),"
+                              "(:receiver,'MIGRATION-RECEIVER',:owner,'INDIVIDUAL','SAVINGS','SGD',500,'Active',:now)"),
+                         {'owner': owner, 'sender': sender, 'receiver': receiver, 'now': now})
+            tx_id = conn.execute(text("INSERT INTO transactions (reference,payment_reference,amount,currency,status,created_at) "
+                                      "VALUES ('MIGRATION-TXN','MIGRATION-BUSINESS',123.45,'SGD','COMPLETED',:now) RETURNING id"), {'now': now}).scalar_one()
+            conn.execute(text("INSERT INTO payment_instructions (payment_id,transaction_id,sender_account_id,receiver_account_id,idempotency_key,request_fingerprint,scenario_code,completed_at) "
+                              "VALUES (:payment,:tx,:sender,:receiver,'migration-existing-payment','legacy','NORMAL',:now)"),
+                         {'payment': payment, 'tx': tx_id, 'sender': sender, 'receiver': receiver, 'now': now})
+            conn.execute(text("INSERT INTO ledger_journals (journal_id,journal_ref,normal_transaction_id,source_transaction_id,payment_reference,currency,status,posted_at,created_at) "
+                              "VALUES (:journal,'MIGRATION-JRN',:tx,:tx,'MIGRATION-TXN','SGD','Posted',:now,:now)"), {'journal': journal, 'tx': tx_id, 'now': now})
+            conn.execute(text("INSERT INTO ledger_entries (entry_id,entry_ref,journal_id,account_id,side,amount,currency,description,posted) "
+                              "VALUES (:debit,'MIGRATION-D',:journal,:sender,'Debit',123.45,'SGD','Existing debit',true),"
+                              "(:credit,'MIGRATION-C',:journal,:receiver,'Credit',123.45,'SGD','Existing credit',true)"),
+                         {'debit': uuid4(), 'credit': uuid4(), 'journal': journal, 'sender': sender, 'receiver': receiver})
+            conn.execute(text("INSERT INTO processing_events (transaction_id,event_type,details,status,created_at) "
+                              "VALUES (:tx,'SOURCE_IMPORTED','Existing source history','COMPLETED',:now)"), {'tx': tx_id, 'now': now})
             conn.execute(text("""INSERT INTO detection_rules (id,name,exception_type,enabled,threshold) VALUES
                 (1,'My disabled failure rule','Payment Processing Failure',false,NULL),
                 (42,'Preserved legacy rule','Unregistered Legacy Type',true,7)"""))
@@ -111,6 +134,8 @@ class PostgreSQLDetectionTests(unittest.TestCase):
                 SELECT 73,transaction_id,NULL,'Duplicate Transaction','HIGH','CLOSED',CAST(:evidence AS JSON),
                        NULL,:now,:now FROM exceptions WHERE id=4"""),
                          {"now": now, "evidence": '{"originalReference":"OLD"}'})
+            conn.execute(text("INSERT INTO exception_case_actions (exception_id,action_type,actor,details,created_at) "
+                              "VALUES (4,'NOTE_ADDED','ADMIN',CAST(:details AS JSON),:now)"), {'details': '{"note":"preserve history"}', 'now': now})
             if ahead is not None or called:
                 conn.execute(text("SELECT setval('detection_rules_id_seq',:value,:called)"),
                              {"value": ahead or 1, "called": called})
@@ -131,7 +156,7 @@ class PostgreSQLDetectionTests(unittest.TestCase):
             generated = conn.execute(text("SELECT MIN(id) FROM detection_rules WHERE id NOT IN (1,42)")).scalar_one()
             self.assertEqual(generated, max(43, (ahead or 1) + int(called)))
             self.assertEqual(conn.execute(text("SELECT count(*) FROM detection_observations")).scalar_one(), 0)
-            self.assertEqual(conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one(), "20261110_07")
+            self.assertEqual(conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one(), "20261111_08")
         # Repeat upgrade is a no-op, including allocation and records.
         state = self.sequence_state()
         self.upgrade()
@@ -205,7 +230,28 @@ class PostgreSQLDetectionTests(unittest.TestCase):
         with self.engine.begin() as conn:
             cfg.attributes["connection"] = conn
             command.upgrade(cfg, "head")
-            self.assertEqual(conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one(), "20261110_07")
+            self.assertEqual(conn.execute(text("SELECT version_num FROM alembic_version")).scalar_one(), "20261111_08")
             self.assertEqual(len([name for name in inspect(conn).get_table_names(schema=self.schema)
-                                  if name != "alembic_version"]), 17)
+                                  if name != "alembic_version"]), 18)
         self.assert_rules()
+
+    def test_concurrent_scenario_run_posts_once(self):
+        from modules.payment_processing.scenarios import generate_duplicate
+        from modules.payment_processing.schemas import ScenarioRequest
+        from modules.payment_processing.models import ExceptionBatch, ExceptionBatchItem
+        self.upgrade()
+        with Session(self.engine) as db, db.begin():
+            seed_demo(db)
+        payload = ScenarioRequest(sender_account_ref='ACC-100003', receiver_account_ref='ACC-100001', amount='123.45',
+            idempotency_key='concurrent-scenario', scenario_code='DUPLICATE', duplicate_scenario='CUSTOMER_DOUBLE_CLICK', run_key='concurrent-run-0001')
+        barrier = Barrier(4)
+        def generate(_):
+            barrier.wait()
+            with Session(self.engine) as db, db.begin():
+                return generate_duplicate(db, payload, 'ADMIN').batch_id
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(generate, range(4)))
+        self.assertEqual(len(set(results)), 1)
+        with Session(self.engine) as db:
+            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionBatch)), 1)
+            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionBatchItem)), 2)

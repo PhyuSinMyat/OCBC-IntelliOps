@@ -14,7 +14,7 @@ test('payment register shows parties, filters, amounts and matching journal link
   await expect(page.getByRole('dialog')).toContainText('Northstar Trading Pte Ltd');
   await page.getByRole('tab', { name: 'Related Records' }).click();
   await page.getByRole('link', { name: 'Open Ledger Journal', exact: true }).click();
-  await expect(page.getByRole('dialog').getByRole('heading', { name: 'JRN-1001' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Backend connection required' })).toBeVisible();
 });
 
 test('payment sorting, empty state, reset and mobile scrolling work', async ({ page }) => {

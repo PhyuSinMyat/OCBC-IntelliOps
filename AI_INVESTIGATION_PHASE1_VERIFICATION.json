@@ -1,0 +1,351 @@
+{
+  "passed": true,
+  "schemaRevision": "20261111_08",
+  "requestColumnsVerified": [
+    "request_id",
+    "business_instruction_id",
+    "payment_id",
+    "origin",
+    "retry_of_request_id",
+    "submitted_idempotency_key",
+    "authorization_id",
+    "correlation_id",
+    "received_at"
+  ],
+  "allSelectedSourceTablesUnchanged": true,
+  "sourceTableFingerprints": {
+    "customers": {
+      "count": 9,
+      "sha256": "8458081a5c788894746a84c4e4ba547b990ff4ee4df81339453097bc80a9bcbf"
+    },
+    "accounts": {
+      "count": 10,
+      "sha256": "5eaae538d94e70f0f261d4251deeb53e5cfda5d9f438f286d799454f39afa2d4"
+    },
+    "transactions": {
+      "count": 18,
+      "sha256": "3232a2847d60f0cd8b38acfc559d008abe1657c2f03826cd3df71cffe93b7d7f"
+    },
+    "payment_instructions": {
+      "count": 18,
+      "sha256": "a65f83bc26b1561f2bac0c47623ce799e1649178adc74a88c353d0ae3ba8d173"
+    },
+    "payment_requests": {
+      "count": 10,
+      "sha256": "e0a7d598b0560b93e5bbbcad26aecf05f68a5bc037357f117ea9b6b06011ff7a"
+    },
+    "processing_events": {
+      "count": 123,
+      "sha256": "213e7ef765cfb008508d67a620cd4903308ff30cdb12eb767ccd51dc3c939be1"
+    },
+    "ledger_journals": {
+      "count": 12,
+      "sha256": "75338547734439cdba0600453981cd8b4ecff01a6d50ba2e288139726237e5c2"
+    },
+    "ledger_entries": {
+      "count": 24,
+      "sha256": "0ddb2b30454f951564ba7805355457cf70fcaa1c8fc900f725972f402204474a"
+    },
+    "ledger_records": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "exceptions": {
+      "count": 11,
+      "sha256": "73fa00bc57a9bbfe508990e4bb7e956417ec98069427d35cdf6236ccfd29bffe"
+    },
+    "exception_case_actions": {
+      "count": 11,
+      "sha256": "d779b38835d6fc3f34e4cdf1370caeab9b0c23a89e9a5e9131a26596c7b5e1bd"
+    },
+    "audit_events": {
+      "count": 30,
+      "sha256": "63a884f5dde5c47e5a36308696c2758bb3c30d389c3e8ee14723c00c3293d9da"
+    },
+    "exception_batches": {
+      "count": 7,
+      "sha256": "ebbf365811e3a098808d8b08222fe2d62cccd7c8a208d5278a8ac060368bd703"
+    },
+    "exception_batch_items": {
+      "count": 15,
+      "sha256": "16ab5b03d0d95217ec31b178b90912b1c0c4d80917eb9c2eb09c15d2c6994707"
+    }
+  },
+  "cases": [
+    {
+      "caseId": "CASE-000007",
+      "payments": [
+        "TXN-C1C900478EA5415B",
+        "TXN-AC93BF3A8E5642D7"
+      ],
+      "rootCause": "CUSTOMER_DOUBLE_SUBMISSION",
+      "financialClassification": "SINGLE_POSTING_CONFIRMED",
+      "journalCount": 1,
+      "entryCount": 2,
+      "requests": 2,
+      "origins": [
+        "CUSTOMER",
+        "CUSTOMER"
+      ],
+      "validRequestIntegrity": true,
+      "validAuthorizations": 0,
+      "validRetries": 0,
+      "structuredEvents": 8,
+      "financialImpact": {
+        "completedPaymentCount": 1,
+        "confirmedPostedJournalCount": 1,
+        "validDebitTotals": {
+          "SGD": "1.11"
+        },
+        "validCreditTotals": {
+          "SGD": "1.11"
+        },
+        "accountMovements": [
+          {
+            "accountReference": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD",
+            "debit": "0.00",
+            "credit": "1.11",
+            "net": "1.11"
+          },
+          {
+            "accountReference": "VERIFY-AUTH-SENDER",
+            "currency": "SGD",
+            "debit": "1.11",
+            "credit": "0.00",
+            "net": "-1.11"
+          }
+        ],
+        "senderFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-SENDER",
+          "currency": "SGD",
+          "debit": "1.11",
+          "credit": "0.00",
+          "net": "-1.11"
+        },
+        "receiverFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-RECEIVER",
+          "currency": "SGD",
+          "debit": "0.00",
+          "credit": "1.11",
+          "net": "1.11"
+        },
+        "expectedMovementForOneTransfer": {
+          "currency": "SGD",
+          "amount": "1.11",
+          "senderAccount": "VERIFY-AUTH-SENDER",
+          "receiverAccount": "VERIFY-AUTH-RECEIVER"
+        },
+        "excessPostingAmount": {
+          "currency": "SGD",
+          "amount": "0.00"
+        },
+        "journalValidation": [
+          {
+            "journalReference": "JRN-C1C900478EA5415B",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "1.11",
+            "creditTotal": "1.11",
+            "reasons": []
+          }
+        ],
+        "outcomeUnknown": false,
+        "requestHistoryComplete": true,
+        "relationshipUncertain": false,
+        "originalExecution": "Posted",
+        "duplicateExecution": "Not Started"
+      },
+      "modelEvidenceLeakCheckPassed": true
+    },
+    {
+      "caseId": "CASE-000008",
+      "payments": [
+        "TXN-F880C89D559141A2",
+        "TXN-533CFF512A0E4448"
+      ],
+      "rootCause": "IDEMPOTENCY_CONTROL_FAILURE",
+      "financialClassification": "DOUBLE_POSTING_CONFIRMED",
+      "journalCount": 2,
+      "entryCount": 4,
+      "requests": 2,
+      "origins": [
+        "CUSTOMER",
+        "SYSTEM"
+      ],
+      "validRequestIntegrity": true,
+      "validAuthorizations": 0,
+      "validRetries": 1,
+      "structuredEvents": 9,
+      "financialImpact": {
+        "completedPaymentCount": 2,
+        "confirmedPostedJournalCount": 2,
+        "validDebitTotals": {
+          "SGD": "4.44"
+        },
+        "validCreditTotals": {
+          "SGD": "4.44"
+        },
+        "accountMovements": [
+          {
+            "accountReference": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD",
+            "debit": "0.00",
+            "credit": "4.44",
+            "net": "4.44"
+          },
+          {
+            "accountReference": "VERIFY-AUTH-SENDER",
+            "currency": "SGD",
+            "debit": "4.44",
+            "credit": "0.00",
+            "net": "-4.44"
+          }
+        ],
+        "senderFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-SENDER",
+          "currency": "SGD",
+          "debit": "4.44",
+          "credit": "0.00",
+          "net": "-4.44"
+        },
+        "receiverFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-RECEIVER",
+          "currency": "SGD",
+          "debit": "0.00",
+          "credit": "4.44",
+          "net": "4.44"
+        },
+        "expectedMovementForOneTransfer": {
+          "currency": "SGD",
+          "amount": "2.22",
+          "senderAccount": "VERIFY-AUTH-SENDER",
+          "receiverAccount": "VERIFY-AUTH-RECEIVER"
+        },
+        "excessPostingAmount": {
+          "currency": "SGD",
+          "amount": "2.22"
+        },
+        "journalValidation": [
+          {
+            "journalReference": "JRN-F880C89D559141A2",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "2.22",
+            "creditTotal": "2.22",
+            "reasons": []
+          },
+          {
+            "journalReference": "JRN-533CFF512A0E4448",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "2.22",
+            "creditTotal": "2.22",
+            "reasons": []
+          }
+        ],
+        "outcomeUnknown": false,
+        "requestHistoryComplete": true,
+        "relationshipUncertain": false,
+        "originalExecution": "Posted",
+        "duplicateExecution": "Posted"
+      },
+      "modelEvidenceLeakCheckPassed": true
+    },
+    {
+      "caseId": "CASE-000009",
+      "payments": [
+        "TXN-46BDC378061B4246",
+        "TXN-5E4F6811F0554C43"
+      ],
+      "rootCause": "LEGITIMATE_REPEATED_PAYMENT",
+      "financialClassification": "DOUBLE_POSTING_CONFIRMED",
+      "journalCount": 2,
+      "entryCount": 4,
+      "requests": 2,
+      "origins": [
+        "CUSTOMER",
+        "CUSTOMER"
+      ],
+      "validRequestIntegrity": true,
+      "validAuthorizations": 2,
+      "validRetries": 0,
+      "structuredEvents": 8,
+      "financialImpact": {
+        "completedPaymentCount": 2,
+        "confirmedPostedJournalCount": 2,
+        "validDebitTotals": {
+          "SGD": "6.66"
+        },
+        "validCreditTotals": {
+          "SGD": "6.66"
+        },
+        "accountMovements": [
+          {
+            "accountReference": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD",
+            "debit": "0.00",
+            "credit": "6.66",
+            "net": "6.66"
+          },
+          {
+            "accountReference": "VERIFY-AUTH-SENDER",
+            "currency": "SGD",
+            "debit": "6.66",
+            "credit": "0.00",
+            "net": "-6.66"
+          }
+        ],
+        "senderFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-SENDER",
+          "currency": "SGD",
+          "debit": "6.66",
+          "credit": "0.00",
+          "net": "-6.66"
+        },
+        "receiverFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-RECEIVER",
+          "currency": "SGD",
+          "debit": "0.00",
+          "credit": "6.66",
+          "net": "6.66"
+        },
+        "expectedMovementForOneTransfer": null,
+        "excessPostingAmount": null,
+        "journalValidation": [
+          {
+            "journalReference": "JRN-46BDC378061B4246",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "3.33",
+            "creditTotal": "3.33",
+            "reasons": []
+          },
+          {
+            "journalReference": "JRN-5E4F6811F0554C43",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "3.33",
+            "creditTotal": "3.33",
+            "reasons": []
+          }
+        ],
+        "outcomeUnknown": false,
+        "requestHistoryComplete": true,
+        "relationshipUncertain": false,
+        "originalExecution": "Posted",
+        "duplicateExecution": "Posted"
+      },
+      "modelEvidenceLeakCheckPassed": true
+    }
+  ],
+  "liveOpenAICalls": 0,
+  "databaseWrites": 0,
+  "schemaChanges": 0,
+  "isolatedTestsPassed": 31
+}

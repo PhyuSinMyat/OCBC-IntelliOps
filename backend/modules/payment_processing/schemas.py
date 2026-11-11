@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 
 Scenario = Literal["NORMAL", "DUPLICATE", "PROCESSING_FAILURE", "MISSING_LEDGER", "AMOUNT_MISMATCH", "UNMATCHED"]
 ExceptionScenario = Literal["MISSING_LEDGER", "AMOUNT_MISMATCH", "DUPLICATE", "PROCESSING_FAILURE"]
@@ -19,6 +19,14 @@ class PaymentRequest(BaseModel):
 
 class ScenarioRequest(PaymentRequest):
     scenario_code: Scenario
+    duplicate_scenario: Literal['CUSTOMER_DOUBLE_CLICK', 'AUTOMATIC_RETRY_FAILURE', 'LEGITIMATE_REPEATED_PAYMENTS'] | None = None
+    run_key: str | None = Field(None, min_length=8, max_length=100)
+
+    @model_validator(mode='after')
+    def validate_variant(self):
+        if bool(self.duplicate_scenario) != bool(self.run_key) or self.duplicate_scenario and self.scenario_code != 'DUPLICATE':
+            raise ValueError('A duplicate variant and run_key must be supplied together with DUPLICATE.')
+        return self
 
 
 class ExceptionBatchRequest(BaseModel):
@@ -37,12 +45,13 @@ class PaymentOut(BaseModel):
     receiver: dict | None = None
     amountCents: int
     currency: str
-    status: Literal["Pending", "Processing", "Completed", "Failed", "Rejected"]
+    status: Literal["Pending", "Processing", "Completed", "Failed", "Rejected", "Held"]
     createdAt: datetime
     completedAt: datetime | None = None
     failureCode: str | None = None
     failureDescription: str | None = None
-    scenarioCode: str | None = None
+    requests: list[dict] = Field(default_factory=list)
+    relatedPaymentReferences: list[str] = Field(default_factory=list)
     reconciliationDueAt: datetime | None = None
     originalPaymentId: UUID | None = None
 
@@ -54,6 +63,18 @@ class PaymentPage(BaseModel):
     page_size: int
 
 
+class ScenarioOut(PaymentOut):
+    runId: UUID
+    payments: list[PaymentOut]
+    paymentReferences: list[str]
+    requestIds: list[UUID]
+    instructionReferences: list[UUID]
+    journalReferences: list[str]
+    attemptCount: int
+    postingCount: int
+    timestamp: datetime
+
+
 class EventOut(BaseModel):
     id: str
     paymentId: str
@@ -62,8 +83,10 @@ class EventOut(BaseModel):
     description: str | None
     errorCode: str | None
     occurredAt: datetime
+    requestId: UUID | None = None
 
 
 class RelatedOut(BaseModel):
     journals: list[dict]
     exceptions: list[dict]
+    payments: list[dict] = Field(default_factory=list)

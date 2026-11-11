@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_, asc, desc
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, defer
 from sqlalchemy.exc import IntegrityError
 from shared.security import actor, administrator
 from modules.core_banking.router import get_db
@@ -12,8 +12,11 @@ from modules.intelliops.detection import detect, case_dtos
 from modules.intelliops.rules import DetectionConfigurationError
 from .models import Transaction, PaymentInstruction, ProcessingEvent
 from .schemas import PaymentRequest, ScenarioRequest, ExceptionBatchRequest, PaymentOut, PaymentPage, EventOut, RelatedOut
-from .service import create_payment, payment_dtos, find_payment, PaymentError, aware, fingerprint
+from .service import create_payment, payment_dtos, find_payment, PaymentError, aware, fingerprint, operational_audit_details
 from .batch import create_exception_batch
+from .scenarios import generate_duplicate, run_result
+from .schemas import ScenarioOut
+from shared.schema import capabilities, require_current_schema
 
 router = APIRouter(prefix="/api", tags=["Payments"])
 
@@ -27,7 +30,7 @@ def lookup(db, reference):
 
 @router.get("/payments", response_model=PaymentPage)
 def list_payments(search: str = Query("", max_length=200),
-                  status: Literal["PENDING", "PROCESSING", "COMPLETED", "FAILED", "REJECTED"] | None = None,
+                  status: Literal["PENDING", "PROCESSING", "COMPLETED", "FAILED", "REJECTED", "HELD"] | None = None,
                   currency: str | None = Query(None, pattern=r"^[A-Z]{3}$"),
                   date_from: datetime | None = None, date_to: datetime | None = None,
                   sort: Literal["newest", "oldest", "amount-high", "amount-low", "status", "reference"] = "newest",
@@ -60,6 +63,7 @@ def list_payments(search: str = Query("", max_length=200),
 def submit(db, request, role, scenario):
     try:
         with db.begin():
+            require_current_schema(db)
             tx, replayed = create_payment(db, request, role, scenario)
             reference = tx.reference
     except PaymentError as error:
@@ -86,8 +90,22 @@ def post_payment(request: PaymentRequest, db=Depends(get_db), role=Depends(actor
     return submit(db, request, role, "NORMAL")
 
 
-@router.post("/demo/payments/scenario", response_model=PaymentOut, status_code=201)
+@router.post("/demo/payments/scenario", response_model=ScenarioOut | PaymentOut, status_code=201)
 def post_scenario(request: ScenarioRequest, db=Depends(get_db), role=Depends(administrator)):
+    if request.duplicate_scenario:
+        try:
+            with db.begin():
+                require_current_schema(db)
+                batch = generate_duplicate(db, request, role)
+            return run_result(db, batch)
+        except PaymentError as error:
+            raise HTTPException(error.status, str(error)) from error
+        except IntegrityError as error:
+            db.rollback()
+            raise HTTPException(409, 'Concurrent run conflicted; retry the same run key.') from error
+        except ValueError as error:
+            db.rollback()
+            raise HTTPException(422, 'Scenario posting failed; all financial changes rolled back.') from error
     return submit(db, request, role, request.scenario_code)
 
 
@@ -95,6 +113,7 @@ def post_scenario(request: ScenarioRequest, db=Depends(get_db), role=Depends(adm
 def post_exception_batch(request: ExceptionBatchRequest, db=Depends(get_db), role=Depends(administrator)):
     try:
         with db.begin():
+            require_current_schema(db)
             batch, transactions = create_exception_batch(db, request, role)
             references = [tx.reference for tx in transactions]
         return {"batchId": str(batch.batch_id), "status": batch.status, "created": len(references),
@@ -112,9 +131,13 @@ def payment_detail(payment_id: str, db=Depends(get_db), role=Depends(actor)):
 @router.get("/payments/{payment_id}/events", response_model=list[EventOut])
 def payment_events(payment_id: str, db=Depends(get_db), role=Depends(actor)):
     tx, _ = lookup(db, payment_id)
-    return [dict(id=str(e.id), paymentId=tx.reference, eventType=e.event_type, status=e.status,
+    schema = capabilities(db)
+    query = select(ProcessingEvent).where(ProcessingEvent.transaction_id == tx.id).order_by(ProcessingEvent.created_at, ProcessingEvent.id)
+    if not schema['events']:
+        query = query.options(defer(ProcessingEvent.request_id))
+    return [dict(id=str(e.id), paymentId=tx.reference, requestId=e.request_id if schema['events'] else None, eventType=e.event_type, status=e.status,
                  description=e.details, errorCode=e.error_code, occurredAt=aware(e.created_at))
-            for e in db.scalars(select(ProcessingEvent).where(ProcessingEvent.transaction_id == tx.id).order_by(ProcessingEvent.created_at, ProcessingEvent.id))]
+            for e in db.scalars(query)]
 
 
 @router.get("/payments/{payment_id}/related", response_model=RelatedOut)
@@ -124,7 +147,9 @@ def related_records(payment_id: str, db=Depends(get_db), role=Depends(actor)):
     amounts = db.execute(select(LedgerEntry.journal_id, LedgerEntry.side, func.sum(LedgerEntry.amount))
                          .where(LedgerEntry.journal_id.in_([j.journal_id for j in journals])).group_by(LedgerEntry.journal_id, LedgerEntry.side)).all()
     totals = {(journal_id, side): str(amount) for journal_id, side, amount in amounts}
-    return dict(journals=[dict(id=j.journal_ref, status=j.status, postedAt=aware(j.posted_at), currency=j.currency,
+    payment = payment_dtos(db, [lookup(db, payment_id)])[0]
+    return dict(payments=[p for p in payment_dtos(db) if p['id'] in payment['relatedPaymentReferences']],
+                journals=[dict(id=j.journal_ref, status=j.status, postedAt=aware(j.posted_at), currency=j.currency,
                              paymentReference=j.payment_reference, debitTotal=totals.get((j.journal_id, "Debit"), "0.00"),
                              creditTotal=totals.get((j.journal_id, "Credit"), "0.00")) for j in journals], exceptions=case_dtos(db, tx.id))
 
@@ -133,6 +158,7 @@ def related_records(payment_id: str, db=Depends(get_db), role=Depends(actor)):
 def run_detection(db=Depends(get_db), role=Depends(actor)):
     try:
         with db.begin():
+            require_current_schema(db)
             ids = detect(db, role)
     except DetectionConfigurationError as error:
         raise HTTPException(422, str(error)) from error
@@ -146,5 +172,6 @@ def list_exceptions(db=Depends(get_db), role=Depends(actor)):
 
 @router.get("/audit-events")
 def audit_events(db=Depends(get_db), role=Depends(actor)):
-    return [dict(id=str(e.id), action=e.action, actor=e.actor, reference=e.reference, details=e.details, createdAt=aware(e.created_at))
+    return [dict(id=str(e.id), action=e.action, actor=e.actor, reference=e.reference,
+                 details=operational_audit_details(e.details), createdAt=aware(e.created_at))
             for e in db.scalars(select(AuditEvent).order_by(AuditEvent.id.desc()).limit(500))]

@@ -2,6 +2,8 @@
 
 import { processPayment, detectPayments, nextReference } from './paymentSimulation.js';
 import { paymentRequest, exceptionRequest, fetchBankingSnapshot } from '../api/banking.js';
+import { processDuplicateRun } from './duplicateScenarios.js';
+import { bankingApiUrl, backendModeRequested } from '../api/config.js';
 
 export const customers = [
   ['CUS-001', 'Alex Tan', 'INDIVIDUAL'], ['CUS-002', 'Maya Lim', 'INDIVIDUAL'], ['CUS-003', 'Northstar Trading Pte Ltd', 'BUSINESS'],
@@ -63,7 +65,14 @@ export function restoreRecords(storage) {
   return { processing_events: [], exception_cases: [], audit_events: [], payment_requests: {}, ...saved };
 }
 let state;
-try { state = restoreRecords(globalThis.localStorage); } catch { state = initialRecords(); }
+if (backendModeRequested) {
+  // Never initialize financial records from browser storage in authoritative mode.
+  customers.splice(0); accounts.splice(0);
+  state = { customers: [], accounts: [], payment_transactions: [], ledger_journals: [], ledger_entries: [],
+    processing_events: [], exception_cases: [], audit_events: [], dataSource: 'backend', connectionState: 'loading' };
+} else {
+  try { state = restoreRecords(globalThis.localStorage); } catch { state = initialRecords(); }
+}
 const listeners = new Set();
 globalThis.addEventListener?.('storage', event => {
   if (backendConnected || (event.key !== STORAGE_KEY && event.key !== null)) return;
@@ -72,11 +81,12 @@ globalThis.addEventListener?.('storage', event => {
     listeners.forEach(fn => fn());
   } catch { /* Retain the last valid snapshot. */ }
 });
-export let backendConnected = false;
+export let backendConnected = backendModeRequested;
 export function loadBackendSnapshot(snapshot) {
   customers.splice(0, customers.length, ...snapshot.customers);
   accounts.splice(0, accounts.length, ...snapshot.accounts);
-  state = { ...snapshot, processing_events: snapshot.processing_events || [], exception_cases: snapshot.exception_cases || [], audit_events: snapshot.audit_events || [] };
+  state = { ...snapshot, processing_events: snapshot.processing_events || [], exception_cases: snapshot.exception_cases || [], audit_events: snapshot.audit_events || [],
+    dataSource: 'backend', connectionState: 'ready', connectionError: null };
   backendConnected = true;
   listeners.forEach(fn => fn());
 }
@@ -88,6 +98,7 @@ export function postTransfer(input) {
   listeners.forEach(fn => fn());
 }
 function save(next) {
+  if (backendConnected) throw new Error('Backend records cannot be saved as a browser-only simulation.');
   try { globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(next)); } catch { throw new Error('Unable to save the simulation. Enable browser storage before submitting.'); }
   state = next;
   listeners.forEach(fn => fn());
@@ -96,13 +107,17 @@ export const getSimulationNow = () => new Date(Math.max(Date.now(), Date.parse(s
 export async function createSyntheticPayment(input, role = 'ANALYST') {
   if (backendConnected) {
     const result = await paymentRequest(input.scenario && input.scenario !== 'NORMAL' ? '/api/demo/payments/scenario' : '/api/payments', {
-      sender_account_ref: input.senderId, receiver_account_ref: input.receiverId, amount: input.amount, idempotency_key: input.idempotencyKey,
+      sender_account_ref: input.senderId, receiver_account_ref: input.receiverId, amount: input.amount,
+      currency: input.currency || accounts.find(a => a.id === input.senderId)?.currency, idempotency_key: input.idempotencyKey,
       ...(input.scenario && input.scenario !== 'NORMAL' ? { scenario_code: input.scenario } : {}),
+      ...(input.scenario === 'DUPLICATE' && input.duplicateScenario ? { duplicate_scenario: input.duplicateScenario, run_key: input.runKey } : {}),
     });
-    await refreshBackend();
+    await refreshBackend({ fresh: true });
     return result;
   }
-  const result = processPayment(state, input, { role, now: getSimulationNow() });
+  const result = input.scenario === 'DUPLICATE' && input.duplicateScenario
+    ? processDuplicateRun(state, input, { role, now: getSimulationNow() })
+    : processPayment(state, input, { role, now: getSimulationNow() });
   save(result.state);
   return result.payment;
 }
@@ -111,16 +126,29 @@ export async function createExceptionBatch(exceptionTypes, countPerType) {
   const result = await paymentRequest('/api/demo/exception-batches', {
     exception_types: exceptionTypes, count_per_type: countPerType,
   });
-  await refreshBackend();
+  await refreshBackend({ fresh: true });
   return result;
 }
-export async function refreshBackend() {
-  loadBackendSnapshot(await fetchBankingSnapshot(import.meta.env.VITE_BANKING_API_URL));
+let refreshInFlight;
+export function refreshBackend({ fresh = false } = {}) {
+  if (!backendConnected) return Promise.resolve();
+  // A response captured before a committed write must not satisfy its refresh.
+  if (fresh && refreshInFlight) return refreshInFlight.catch(() => {}).then(() => refreshBackend());
+  if (refreshInFlight) return refreshInFlight;
+  refreshInFlight = fetchBankingSnapshot(bankingApiUrl).then(snapshot => {
+    loadBackendSnapshot(snapshot);
+    return snapshot;
+  }).catch(error => {
+    state = { ...state, connectionState: 'error', connectionError: error.message };
+    listeners.forEach(fn => fn());
+    throw error;
+  }).finally(() => { refreshInFlight = null; });
+  return refreshInFlight;
 }
 export async function runPaymentDetection(role = 'ANALYST') {
   if (backendConnected) {
     const result = await paymentRequest('/api/detection/run', {});
-    await refreshBackend();
+    await refreshBackend({ fresh: true });
     return result.created;
   }
   const next = detectPayments(state, { role, now: getSimulationNow() });
@@ -135,7 +163,7 @@ export async function fetchExceptionCase(caseId) {
 export async function addExceptionNote(caseId, note) {
   if (!backendConnected) throw new Error('Case lifecycle actions require the connected backend.');
   const result = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}/notes`, { method: 'POST', body: { note } });
-  await refreshBackend();
+  await refreshBackend({ fresh: true });
   return result;
 }
 export async function remediateException(caseId, note) {
@@ -143,13 +171,13 @@ export async function remediateException(caseId, note) {
   const result = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}/remediate`, { method: 'POST', body: {
     idempotency_key: `case-resolution-${caseId}-${crypto.randomUUID()}`, note: note || null,
   } });
-  await refreshBackend();
+  await refreshBackend({ fresh: true });
   return result;
 }
 export async function closeException(caseId, note) {
   if (!backendConnected) throw new Error('Case closure requires the connected backend.');
   const result = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}/close`, { method: 'POST', body: { note: note || null } });
-  await refreshBackend();
+  await refreshBackend({ fresh: true });
   return result;
 }
 export function advanceSimulationClock(role) {

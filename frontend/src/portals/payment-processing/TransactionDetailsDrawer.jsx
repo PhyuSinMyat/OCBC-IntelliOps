@@ -5,7 +5,7 @@ import { accounts, money, postingTime, useBankingRecords } from '../../shared/da
 import { typeLabel } from '../core-banking/accountFilters.js';
 
 export const timestamp = value => value && Number.isFinite(Date.parse(value)) ? postingTime(value) : '—';
-export const StatusBadge = ({ status }) => <span className={`payment-status ${['Completed', 'Failed', 'Pending', 'Processing'].includes(status) ? status.toLowerCase() : 'other'}`}>{status}</span>;
+export const StatusBadge = ({ status }) => <span className={`payment-status ${['Completed', 'Failed', 'Pending', 'Processing', 'Held'].includes(status) ? status.toLowerCase() : 'other'}`}>{status}</span>;
 
 export default function TransactionDetailsDrawer({ id, onClose }) {
   const records = useBankingRecords();
@@ -14,7 +14,10 @@ export default function TransactionDetailsDrawer({ id, onClose }) {
   const refs = useRef([]);
   const tabs = ['Overview', 'Processing History', 'Related Records'];
   const journals = records.ledger_journals.filter(j => j.paymentId === id || j.sourcePaymentId === id);
-  const cases = (records.exception_cases || []).filter(c => c.transactionId === id);
+  const cases = (records.exception_cases || []).filter(c => c.transactionId === id || c.relatedTransactionId === id);
+  const related = new Set(payment?.relatedPaymentReferences || []);
+  cases.forEach(c => { related.add(c.transactionId); related.add(c.relatedTransactionId); });
+  related.delete(id); related.delete(null); related.delete(undefined);
   const events = (records.processing_events || []).filter(e => e.paymentId === id).sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
   const facts = rows => <dl className="account-facts">{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || 'Unavailable'}</dd></div>)}</dl>;
   const partyFacts = (name, accountId) => {
@@ -33,10 +36,15 @@ export default function TransactionDetailsDrawer({ id, onClose }) {
         <section className="account-balance" aria-label="Payment amount"><span>Payment amount</span><strong>{money(payment.amountCents, payment.currency)}</strong><StatusBadge status={payment.status}/></section>
         <h3 className="drawer-section-title">Payment information</h3>{facts([['Transaction reference', payment.id], ['Processing status', payment.status], ['Currency', payment.currency], ['Initiated at', timestamp(payment.createdAt)], ['Completed at', timestamp(payment.completedAt)]])}
         {partyFacts('Sender', payment.senderId)}{partyFacts('Receiver', payment.receiverId)}
+        {(payment.requests || []).map(r => <section key={r.requestId}><h3 className="drawer-section-title">Request evidence</h3>
+          {facts([['Instruction reference', r.instructionReference], ['Request ID', r.requestId], ['Origin', r.origin],
+            ['Retry of request', r.retryOfRequestId], ['Authorization reference', r.authorizationId], ['Received at', timestamp(r.receivedAt)]])}</section>)}
         {(payment.failureCode || payment.failureDescription) && <section className="payment-error"><h3>Processing error</h3>{facts([['Error code', payment.failureCode], ['Description', payment.failureDescription]])}</section>}
       </>}
       {tab === 'Processing History' && <section><h3 className="drawer-section-title">Processing history</h3><p className="history-caption">Actual recorded events · Chronological · Singapore time</p>{events.length ? <ol className="processing-timeline">{events.map(e => <li key={e.id}><strong>{e.eventType.replaceAll('_', ' ').toLowerCase().replace(/^./, c => c.toUpperCase())}</strong><time dateTime={e.occurredAt}>{timestamp(e.occurredAt)}</time><span className="customer-type-badge">{e.status || 'Status unavailable'}</span><p>{e.description}</p>{e.errorCode && <p className="movement-out">Error: {e.errorCode}</p>}</li>)}</ol> : <p className="account-empty">No processing events were recorded for this existing transaction.</p>}</section>}
       {tab === 'Related Records' && <>
+        <h3 className="drawer-section-title">Related Payments</h3>{[...related].map(ref => <p key={ref}><Link className="account-link"
+          to={'/payments/transactions?transaction=' + encodeURIComponent(ref)}>{ref}</Link></p>)}
         <h3 className="drawer-section-title">Linked Ledger Journal</h3>{journals.length ? journals.map(j => {
           const total = side => records.ledger_entries.filter(e => e.journalId === j.id && e.side === side).reduce((sum, e) => sum + e.amountCents, 0);
           return <article className="posted-entry" key={j.id}>{facts([['Journal reference', j.id], ['Status', j.status], ['Posting timestamp', timestamp(j.postedAt)], ['Payment reference', j.paymentId], ['Debit total', money(total('Debit'), j.currency)], ['Credit total', money(total('Credit'), j.currency)]])}<Link className="account-link" to={'/core-banking/journals?journal=' + encodeURIComponent(j.id)}>Open Ledger Journal</Link></article>;

@@ -35,6 +35,8 @@ def note(case_id: str, request: CaseNoteRequest, db=Depends(get_db), role=Depend
 def remediate(case_id: str, request: RemediationRequest, db=Depends(get_db), role=Depends(administrator)):
     try:
         with db.begin():
+            from shared.schema import require_current_schema
+            require_current_schema(db)
             case = remediate_exception(db, case_id, request, role)
         return case_detail(db, case)
     except CaseError as error:

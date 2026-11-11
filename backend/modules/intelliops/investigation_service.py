@@ -2,61 +2,73 @@
 from datetime import datetime, timezone
 from uuid import uuid4
 from .service import CaseError
-
-CAUSE_TITLES = {
-    "CAUSE_NOT_ESTABLISHED": "Underlying cause not established from available evidence.",
-    "CUSTOMER_DOUBLE_SUBMISSION": "Customer double submission supported by recorded submission events",
-    "IDEMPOTENCY_CONTROL_FAILURE": "Automatic retry and idempotency control failure supported by source events",
-    "LEGITIMATE_REPEATED_PAYMENT": "Separate authorized business instructions",
-}
-CAUSE_EXPLANATIONS = {
-    "CAUSE_NOT_ESTABLISHED": "The available source evidence does not establish why the second request was submitted.",
-    "CUSTOMER_DOUBLE_SUBMISSION": "Distinct customer submission events identify the same intended payment; ledger checks confirm one posting and a held request.",
-    "IDEMPOTENCY_CONTROL_FAILURE": "Correlated system timeout, automatic retry and control-failure events accompany two verified postings. Human review and approval are required before any correction.",
-    "LEGITIMATE_REPEATED_PAYMENT": "Explicit authorization events establish independent payment intentions. Similar details do not establish duplicate intent.",
-}
+from .investigation_projection import model_evidence, PRIVATE_VALUE
 
 
 def investigate(evidence, provider):
     started = datetime.now(timezone.utc).isoformat()
-    model_result, model = provider.analyze(evidence)
-    bounds = evidence["verified_assessment"]
-    for field in ("diagnosis_classification", "root_cause_code", "financial_classification", "recommended_action_code"):
-        if getattr(model_result, field) != bounds[field]:
-            raise CaseError("AI result exceeded the supported evidence bounds; no diagnosis was accepted.", 502)
+    model_input = model_evidence(evidence)
+    model_result, model = provider.analyze(model_input)
+    verification = model_input['financial_verification']
+    if model_result.financial_classification != verification['classification']:
+        raise CaseError('AI result contradicted verified accounting facts; no diagnosis was accepted.', 502)
     allowed = set(evidence["evidence_references"])
-    facts_refs = set()
     for claim in model_result.facts + model_result.hypotheses:
         if not set(claim.evidence_refs) <= allowed:
             raise CaseError("AI result cited unavailable source records; no diagnosis was accepted.", 502)
-    for claim in model_result.facts:
-        facts_refs.update(claim.evidence_refs)
-    if not set(bounds["required_cause_references"]) <= facts_refs:
-        raise CaseError("AI result omitted the required causal source citations; no diagnosis was accepted.", 502)
+    cause_refs = set(model_result.root_cause_evidence_refs)
+    if not cause_refs <= allowed or PRIVATE_VALUE.search(model_result.root_cause_code):
+        raise CaseError('AI result contains unavailable citations or simulator labels.', 502)
+    operational_refs = {f"event:{r['id']}" for r in model_input['snapshot']['events'] if r['eventType'] != 'UNRECOGNIZED_EVENT' and r.get('relationshipValid')}
+    operational_refs.update(f"request:{r['id']}" for r in model_input['snapshot']['requests'] if r['integrityValid'])
+    if model_result.root_cause_code != 'CAUSE_NOT_ESTABLISHED' and not cause_refs.intersection(operational_refs):
+        raise CaseError('A cause hypothesis requires cited operational evidence; no diagnosis was accepted.', 502)
+    # Safety checks verify source relationships after inference; they do not supply an answer.
+    s = evidence['snapshot']
+    a, b = s['original'], s['duplicate']
+    requests = s.get('requests', [])
+    consistent = bool(a and b and not s['linkConflict'] and all(r['integrityValid'] for r in requests)
+        and a['senderId'] and a['receiverId'] and a['senderId'] == b['senderId'] and a['receiverId'] == b['receiverId']
+        and a['amountCents'] == b['amountCents'] and a['currency'] == b['currency'])
+    same = consistent and bool(a['paymentId'] and b['originalPaymentId'] == a['paymentId'] or
+        len(requests) >= 2 and {r['paymentReference'] for r in requests} == {a['id'], b['id']} and len({r['businessInstructionId'] for r in requests}) == 1)
+    separate = consistent and len(requests) == 2 and all(r['authorizationValid'] and r['origin'] == 'CUSTOMER' and not r['retryOfRequestId'] for r in requests)
+    separate = separate and len({r['businessInstructionId'] for r in requests}) == len({r['authorizationId'] for r in requests}) == 2
+    separate = separate and not any(e['eventType'] == 'RETRY_SUBMITTED' for e in s['events'])
+    diagnosis, action = model_result.diagnosis_classification, model_result.recommended_action_code
+    financial = verification['classification']
+    if diagnosis == 'CONFIRMED_DUPLICATE_REQUEST' and not same or diagnosis == 'LEGITIMATE_SEPARATE_INSTRUCTIONS' and not separate:
+        raise CaseError('AI relationship conclusion lacks consistent instruction evidence.', 502)
+    if (action == 'CLOSE_HELD_DUPLICATE' and not (same and financial == 'SINGLE_POSTING_CONFIRMED')
+        or action == 'REVIEW_FALSE_POSITIVE_CLOSURE' and not (separate and financial == 'DOUBLE_POSTING_CONFIRMED')
+        or action == 'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION' and not (same and financial == 'DOUBLE_POSTING_CONFIRMED')):
+        raise CaseError('AI review recommendation is not supported by verified source facts.', 502)
     snapshot = evidence["snapshot"]
     completed = datetime.now(timezone.utc).isoformat()
-    financial = bounds["financial_classification"]
     explanation = {
         "SINGLE_POSTING_CONFIRMED": "One payment-aligned posting is verified; source events record the repeated request held before execution.",
         "DOUBLE_POSTING_CONFIRMED": "Two distinct payment-aligned postings are verified; their intent must be assessed separately.",
         "NO_POSTING_CONFIRMED": "Both source requests are recorded as held before execution within this snapshot.",
         "EXECUTION_OUTCOME_UNKNOWN": "Source or ledger evidence is incomplete or conflicting; no financial-loss amount is asserted.",
     }[financial]
-    cause = bounds["root_cause_code"]
+    cause = model_result.root_cause_code
     return dict(case_id=snapshot["caseRecord"]["id"], investigation_id=f"INV-{uuid4()}",
         run_status="COMPLETED", started_at=started, completed_at=completed,
         evidence_snapshot_at=evidence["retrieved_at"], prototype=False, provider="openai", model=model,
         persistence="BROWSER_SESSION_ONLY", exception_type="DUPLICATE_TRANSACTION",
-        diagnosis_classification=bounds["diagnosis_classification"], root_cause_code=cause,
-        root_cause_title=CAUSE_TITLES[cause], root_cause_explanation=CAUSE_EXPLANATIONS[cause],
-        evidence_strength="Cause supported by explicit source events" if cause != "CAUSE_NOT_ESTABLISHED" else "Partial supporting evidence",
-        unresolved_questions=list(dict.fromkeys(bounds["uncertainty"] + model_result.uncertainty)),
+        diagnosis_classification=diagnosis, root_cause_code=cause,
+        root_cause_title=model_result.root_cause_title, root_cause_explanation=model_result.root_cause_explanation,
+        root_cause_status='MODEL_HYPOTHESIS' if cause != 'CAUSE_NOT_ESTABLISHED' else 'NOT_ESTABLISHED',
+        root_cause_evidence_refs=model_result.root_cause_evidence_refs,
+        evidence_strength='Evidence-cited model hypothesis; human review required.' if cause != 'CAUSE_NOT_ESTABLISHED' else 'Insufficient causal evidence.',
+        unresolved_questions=list(dict.fromkeys(['Source evidence is a snapshot, not authorization for a financial action.'] + model_result.uncertainty)),
         payment_comparison=[snapshot["original"], snapshot["duplicate"]],
         financial_execution_assessment=dict(classification=financial, explanation=explanation,
-                                             original=bounds["original"], duplicate=bounds["duplicate"]),
+                                             original=verification["original"], duplicate=verification["duplicate"]),
+        financial_impact={k: v for k, v in verification.items() if k not in {'classification', 'original', 'duplicate'}},
         investigation_trace=snapshot["events"], supporting_evidence=snapshot,
-        recommended_action_code=bounds["recommended_action_code"],
-        recommended_action=bounds["recommended_action_code"].replace("_", " ").title(),
+        recommended_action_code=action,
+        recommended_action=action.replace("_", " ").title(),
         recommendation_reason=model_result.recommendation_reason,
         risk_consideration="Proposal only. Revalidate current evidence and obtain required human review/approval before any corrective action. No action was executed.",
         policy_review_required=True, evidence_references=evidence["evidence_references"],

@@ -24,7 +24,7 @@ export default function CreateExceptionBatchForm({ open, onClose, onCreated }) {
     catch (failure) { setError(failure.message); }
     finally { setBusy(false); }
   }
-  const total = selected.length * count;
+  const total = (selected.length + Number(selected.includes('DUPLICATE'))) * count;
   return <RecordDrawer open={open} title="Generate Exception Batch" onClose={() => !busy && onClose()}>
     <form className="payment-form exception-batch-form" onSubmit={submit}>
       <p className="history-caption">Choose only the exception types you need. Accounts, currencies, safe amounts, references and idempotency keys are generated automatically.</p>

@@ -1,7 +1,7 @@
 import { accounts, addTransfer, balanceFor, validJournal } from './bankingRecords.js';
 
 export const scenarios = { NORMAL: 'Normal Payment', DUPLICATE: 'Duplicate Transaction', PROCESSING_FAILURE: 'Payment Processing Failure', MISSING_LEDGER: 'Missing Ledger Posting', AMOUNT_MISMATCH: 'Amount Mismatch', UNMATCHED: 'Unmatched Transaction' };
-export const processingStatuses = ['Pending', 'Processing', 'Completed', 'Failed', 'Rejected'];
+export const processingStatuses = ['Pending', 'Processing', 'Completed', 'Failed', 'Rejected', 'Held'];
 export function parseAmount(value) {
   if (!/^\d+(\.\d{1,2})?$/.test(String(value))) throw new Error('Amount must be positive with at most two decimal places.');
   const [whole, fraction = ''] = String(value).split('.');
@@ -74,7 +74,7 @@ export function detectPayments(state, { now = new Date().toISOString(), role = '
     const original = firstReferences.get(business);
     if (!original) firstReferences.set(business, p.id);
     const findings = [];
-    if (original && original !== p.id) findings.push(['Duplicate Transaction', { originalReference: original, businessReference: business }]);
+    // Duplicate pairs are evaluated separately below; do not collapse pairs by payment.
     if (p.status === 'Failed') findings.push(['Payment Processing Failure', { failureCode: p.failureCode || null }]);
     const cutoff = p.reconciliationDueAt || new Date(Date.parse(p.createdAt) + 60000).toISOString();
     if (p.status === 'Completed' && Date.parse(now) >= Date.parse(cutoff)) {
@@ -93,6 +93,34 @@ export function detectPayments(state, { now = new Date().toISOString(), role = '
       while (cases.some(c => c.id === `CASE-${String(number).padStart(6, '0')}`)) number++;
       cases.push({ id: `CASE-${String(number).padStart(6, '0')}`, transactionId: p.id, exceptionType, severity: exceptionType === 'Unmatched Transaction' ? 'MEDIUM' : 'HIGH', status: 'OPEN', createdAt: now, evidence: { transactionReference: p.id, observedAt: now, ...evidence } });
     }
+  }
+  const ordered = [...state.payment_transactions].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id));
+  for (let i = 0; i < ordered.length; i++) for (let j = i + 1; j < ordered.length; j++) {
+    const a = ordered[i], b = ordered[j];
+    const matching = a.senderId === b.senderId && a.receiverId === b.receiverId && a.amountCents === b.amountCents && a.currency === b.currency;
+    const direct = b.originalPaymentId && b.originalPaymentId === (a.paymentId || a.id);
+    const shared = a.businessReference && a.businessReference === b.businessReference;
+    const elapsed = Math.abs(Date.parse(a.createdAt) - Date.parse(b.createdAt)) / 1000;
+    const window = state.duplicateSimilarityWindowSeconds ?? 120;
+    if (!(direct || shared || matching && a.status === 'Completed' && b.status === 'Completed' && elapsed <= window)) continue;
+    const pairKey = ['DUPLICATE_TRANSACTION', ...[a.id, b.id].sort()].join(':');
+    const prior = cases.filter(c => c.exceptionType === 'Duplicate Transaction' && (c.detectionKey === pairKey || c.transactionId === b.id && c.evidence?.originalReference === a.id));
+    // Local cases have no resolution UI; preserve terminal history as well as active cases.
+    if (prior.length) continue;
+    const linked = p => state.ledger_journals.filter(j => j.paymentId === p.id || j.sourcePaymentId === p.id);
+    const journals = p => linked(p).filter(j => validJournal(state, j) && state.ledger_entries.filter(e => e.journalId === j.id)
+      .every(e => e.amountCents === p.amountCents && e.accountId === (e.side === 'Debit' ? p.senderId : p.receiverId)));
+    const aj = journals(a), bj = journals(b);
+    const consistent = aj.length === linked(a).length && bj.length === linked(b).length;
+    const financial = consistent && aj.length === 1 && bj.length === 1 ? 'TWO_POSTINGS_CONFIRMED'
+      : consistent && aj.length === 1 && !bj.length && b.status === 'Held' ? 'SINGLE_POSTING_CONFIRMED_DUPLICATE_HELD' : 'EXECUTION_OUTCOME_UNKNOWN';
+    let number = cases.length + 1;
+    while (cases.some(c => c.id === `CASE-${String(number).padStart(6, '0')}`)) number++;
+    cases.push({ id: `CASE-${String(number).padStart(6, '0')}`, transactionId: b.id, relatedTransactionId: a.id,
+      exceptionType: 'Duplicate Transaction', detectionKey: pairKey, severity: 'HIGH', status: 'OPEN', createdAt: now,
+      evidence: { transactionReference: b.id, originalReference: a.id, observedAt: now, classification: 'SUSPECTED_DUPLICATE',
+        rootCause: 'NOT_ESTABLISHED', attributesMatch: matching, timeDifferenceSeconds: elapsed, originalInstructionLinked: Boolean(direct),
+        financialAssessment: financial, originalJournalReferences: aj.map(j => j.id), duplicateJournalReferences: bj.map(j => j.id) } });
   }
   const added = cases.slice((state.exception_cases || []).length);
   return { ...state, exception_cases: cases, simulationNow: now,

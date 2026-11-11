@@ -135,8 +135,8 @@ class PaymentTests(unittest.TestCase):
 
     def test_all_scenarios_detection_cutoff_and_no_duplicate_active_cases(self):
         results = {}
-        for code in ["DUPLICATE", "PROCESSING_FAILURE", "MISSING_LEDGER", "AMOUNT_MISMATCH", "UNMATCHED"]:
-            results[code] = self.post(code, idempotency_key=f"scenario-{code}")
+        for index, code in enumerate(["DUPLICATE", "PROCESSING_FAILURE", "MISSING_LEDGER", "AMOUNT_MISMATCH", "UNMATCHED"]):
+            results[code] = self.post(code, amount=str(100 + index), idempotency_key=f"scenario-{code}")
         self.assertEqual(results["DUPLICATE"]["status"], "Pending")
         self.assertIsNotNone(results["DUPLICATE"]["originalPaymentId"])
         failure = results["PROCESSING_FAILURE"]
@@ -153,7 +153,7 @@ class PaymentTests(unittest.TestCase):
         cases = self.client.get("/api/exceptions").json()
         self.assertEqual({c["exceptionType"] for c in cases}, {"Duplicate Transaction", "Payment Processing Failure", "Missing Ledger Posting", "Amount Mismatch", "Unmatched Transaction"})
         self.assertTrue(all(c["status"] == "OPEN" and c["evidence"]["observedAt"] for c in cases))
-        self.assertEqual(self.balance(), Decimal("44299.99"))
+        self.assertEqual(self.balance(), Decimal("44306.99"))
         # Duplicate posts only the original; failure/missing never post; mismatch posts 99.99.
         with Session(self.engine) as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(LedgerJournal)), 5)
@@ -240,8 +240,8 @@ class PaymentTests(unittest.TestCase):
                 self.assertEqual(db.get(ExceptionCase, int(case_id.removeprefix("CASE-"))).status, "OPEN")
 
     def test_duplicate_mismatch_and_processing_failure_resolution_policies(self):
-        payments = {code: self.post(code, idempotency_key=f"resolve-{code}")
-                    for code in ["DUPLICATE", "PROCESSING_FAILURE", "AMOUNT_MISMATCH"]}
+        payments = {code: self.post(code, amount=str(100 + index), idempotency_key=f"resolve-{code}")
+                    for index, code in enumerate(["DUPLICATE", "PROCESSING_FAILURE", "AMOUNT_MISMATCH"])}
         self.assertEqual(self.client.post("/api/detection/run").json()["created"], 2)
         with patch.dict(os.environ, {"INTELLIOPS_SIMULATION_TIME": "2026-11-03T03:01:01+00:00"}):
             self.assertEqual(self.client.post("/api/detection/run").json()["created"], 1)
@@ -260,9 +260,9 @@ class PaymentTests(unittest.TestCase):
         self.assertEqual(failure["status"], "Completed")
         self.assertIsNone(failure["failureCode"])
         mismatch = self.client.get(f"/api/payments/{payments['AMOUNT_MISMATCH']['id']}/related").json()
-        self.assertEqual(sum(Decimal(j["debitTotal"]) for j in mismatch["journals"]), Decimal("100.00"))
-        self.assertEqual(sum(Decimal(j["creditTotal"]) for j in mismatch["journals"]), Decimal("100.00"))
-        self.assertEqual(self.balance(), Decimal("44300.00"))
+        self.assertEqual(sum(Decimal(j["debitTotal"]) for j in mismatch["journals"]), Decimal("102.00"))
+        self.assertEqual(sum(Decimal(j["creditTotal"]) for j in mismatch["journals"]), Decimal("102.00"))
+        self.assertEqual(self.balance(), Decimal("44303.00"))
         with Session(self.engine) as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionResolution)), 3)
 
@@ -273,12 +273,12 @@ class PaymentTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 201, response.text)
         data = response.json()
-        self.assertEqual(data["created"], 6)
-        self.assertEqual(len(data["transactionReferences"]), 6)
+        self.assertEqual(data["created"], 8)
+        self.assertEqual(len(data["transactionReferences"]), 8)
         self.assertEqual(set(data["exceptionTypes"]), {"MISSING_LEDGER", "DUPLICATE", "PROCESSING_FAILURE"})
         with Session(self.engine) as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionBatch)), 1)
-            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionBatchItem)), 6)
+            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionBatchItem)), 8)
             instructions = db.scalars(select(PaymentInstruction).where(
                 PaymentInstruction.scenario_code.in_(["MISSING_LEDGER", "DUPLICATE", "PROCESSING_FAILURE"]))).all()
             self.assertEqual(sum(i.scenario_code == "MISSING_LEDGER" for i in instructions), 2)

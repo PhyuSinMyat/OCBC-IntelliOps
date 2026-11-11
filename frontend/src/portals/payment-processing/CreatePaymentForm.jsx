@@ -2,6 +2,7 @@ import React, { useRef, useState } from 'react';
 import RecordDrawer from '../../shared/components/RecordDrawer.jsx';
 import { accounts, backendConnected, createSyntheticPayment, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { parseAmount, scenarios } from '../../shared/data/paymentSimulation.js';
+import { duplicateScenarios } from '../../shared/data/duplicateScenarios.js';
 
 const selectableScenarios = ['MISSING_LEDGER', 'AMOUNT_MISMATCH', 'DUPLICATE', 'PROCESSING_FAILURE'];
 const scenarioHelp = {
@@ -14,7 +15,7 @@ const scenarioHelp = {
 
 export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
   const records = useBankingRecords();
-  const [values, setValues] = useState({ senderId: '', receiverId: '', amount: '', scenario: 'NORMAL' });
+  const [values, setValues] = useState({ senderId: '', receiverId: '', amount: '', scenario: 'NORMAL', duplicateScenario: 'CUSTOMER_DOUBLE_CLICK' });
   const [search, setSearch] = useState({ senderId: '', receiverId: '' });
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
@@ -41,7 +42,7 @@ export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
     lock.current = true;
     setBusy(true);
     try {
-      const payment = await createSyntheticPayment({ ...values, scenario: role === 'ADMIN' ? values.scenario : 'NORMAL', idempotencyKey: key.current }, role);
+      const payment = await createSyntheticPayment({ ...values, runKey: key.current, scenario: role === 'ADMIN' ? values.scenario : 'NORMAL', idempotencyKey: key.current }, role);
       onCreated(payment);
     } catch (error) { setErrors({ [/funds|amount/i.test(error.message) ? 'amount' : /currency|receiver/i.test(error.message) ? 'receiverId' : 'submit']: error.message }); }
     finally { lock.current = false; setBusy(false); }
@@ -62,7 +63,15 @@ export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
         <option value="NORMAL">No exception (Normal Payment)</option>
         {selectableScenarios.map(code => <option value={code} key={code}>{scenarios[code]}</option>)}
       </select></label> : <p>Exception injection is restricted to the ADMIN {backendConnected ? 'role' : 'local demo role'}. This payment will use normal processing.</p>}
-      <p className="payment-scenario-help">{role === 'ADMIN' ? scenarioHelp[values.scenario] : scenarioHelp.NORMAL}</p>
+      {role === 'ADMIN' && values.scenario === 'DUPLICATE' && <>
+        <label htmlFor="duplicate-scenario">Duplicate Transaction Scenario<select id="duplicate-scenario" value={values.duplicateScenario}
+          onChange={e => change('duplicateScenario', e.target.value)} disabled={busy}>
+          {duplicateScenarios.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
+        </select></label>
+        <p className="history-caption">{duplicateScenarios.find(s => s.code === values.duplicateScenario)?.description}
+          {!backendConnected && ' Local-only simulation: saved in this browser, not PostgreSQL.'}</p>
+      </>}
+      {values.scenario !== 'DUPLICATE' && <p className="payment-scenario-help">{role === 'ADMIN' ? scenarioHelp[values.scenario] : scenarioHelp.NORMAL}</p>}
       <p className="history-caption">Exception scenarios generate source evidence; they do not create cases directly. Run detection separately. Reconciliation-dependent cases use a {records.reconciliationSeconds || 60}-second cutoff.</p>
     </fieldset>
     {errors.submit && <p role="alert" className="movement-out">{errors.submit}</p>}

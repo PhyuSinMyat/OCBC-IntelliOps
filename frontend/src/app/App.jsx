@@ -3,9 +3,28 @@ import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { Bell, ChevronRight, CircleDot, Menu, ShieldCheck, X } from 'lucide-react';
 import { portals } from './portals.js';
 import PortalPage from './PortalPage.jsx';
+import { backendConnected, refreshBackend, useBankingRecords } from '../shared/data/bankingRecords.js';
 
 export default function App() {
   const location = useLocation();
+  const records = useBankingRecords();
+  useEffect(() => {
+    if (backendConnected) refreshBackend().catch(() => {});
+  }, [location.pathname]);
+  useEffect(() => {
+    if (!backendConnected) return;
+    const refresh = () => {
+      if (document.visibilityState !== 'hidden') refreshBackend().catch(() => {});
+    };
+    const timer = setInterval(refresh, 10000);
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, []);
   const portal = portals.find(p => location.pathname.startsWith(`/${p.id}/`)) || portals[0];
   const [menuOpen, setMenuOpen] = useState(false);
   const [popover, setPopover] = useState(null);
@@ -65,6 +84,7 @@ export default function App() {
     </aside>
     <main id="main-content" tabIndex={-1} className="main-content" inert={menuOpen ? true : undefined} onClick={() => popover && setPopover(null)}>
       <div className="workspace-topline"><div className="workspace-context"><span>Workspace</span><ChevronRight size={14}/><span>{portal.label}</span><ChevronRight size={14}/><strong>{title}</strong></div><span className="workspace-mode"><ShieldCheck size={13}/>Demo environment</span></div>
+      {backendConnected && records.connectionError && <div className="payment-feedback" role="alert">Unable to refresh database records: {records.connectionError} Last retrieved records remain visible. <button className="account-link" onClick={() => refreshBackend().catch(() => {})}>Retry database connection</button></div>}
       <Routes><Route path="/" element={<Navigate to="/intelliops/overview" replace/>}/>{portals.flatMap(p => p.sections.flatMap(s => s.items.map(([path]) => <Route key={`${p.id}/${path}`} path={`/${p.id}/${path}`} element={<PortalPage portal={portal} title={title}/>}/>)))}<Route path="*" element={<Navigate to="/intelliops/overview" replace/>}/></Routes>
     </main>
   </div>;

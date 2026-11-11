@@ -20,7 +20,7 @@ class RuleSpec:
 
 
 RULES = (
-    RuleSpec("DUPLICATE_TRANSACTION", "Duplicate Transaction", "Source-linked duplicate request or reference collision; posting assessment is separate."),
+    RuleSpec("DUPLICATE_TRANSACTION", "Duplicate Transaction", "Potential duplicate pair; posting assessment is separate.", defaults={"similarity_window_seconds": 120}),
     RuleSpec("PAYMENT_PROCESSING_FAILURE", "Payment Processing Failure", "Payment source reports FAILED."),
     RuleSpec("MISSING_LEDGER_POSTING", "Missing Ledger Posting", "Completed payment has no linked modern or legacy posting after cutoff.", threshold_key="reconciliation_seconds"),
     RuleSpec("UNMATCHED_TRANSACTION", "Unmatched Transaction", "Internally valid journal conflicts with source transaction reference.", "MEDIUM", threshold_key="reconciliation_seconds"),

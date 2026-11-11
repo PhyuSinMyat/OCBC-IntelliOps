@@ -56,19 +56,23 @@ test('journal and payment references open their matching existing drawers', asyn
   await page.getByRole('button', { name: 'ACC-100001', exact: true }).click();
   await page.getByRole('dialog').getByRole('link', { name: 'JRN-1002', exact: true }).click();
   await expect(page).toHaveURL(/core-banking\/journals\?journal=JRN-1002/);
-  await expect(page.getByRole('dialog').getByRole('heading', { name: 'JRN-1002' })).toBeVisible();
-  await page.getByRole('dialog').getByRole('link', { name: 'Open Payment Transaction', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Backend connection required' })).toBeVisible();
+  await page.goto('/payments/transactions?transaction=TXN-1002');
   await expect(page).toHaveURL(/payments\/transactions\?transaction=TXN-1002/);
   await expect(page.getByRole('dialog')).toContainText('SGD 3,500.00');
   await page.goto('/core-banking/journals?journal=DOES-NOT-EXIST');
-  await expect(page.getByRole('dialog')).toContainText('This record is unavailable');
+  await expect(page.getByRole('heading', { name: 'Backend connection required' })).toBeVisible();
 });
 
-test('synthetic transfer remains consistent across portals and refresh', async ({ page }) => {
-  await page.goto('/core-banking/journals');
-  await page.getByRole('button', { name: 'Create synthetic transfer', exact: true }).click();
+test('legacy payment demo stays separate from backend-only journal register', async ({ page }) => {
+  await page.goto('/payments/transactions');
+  await page.getByRole('button', { name: 'Create Synthetic Payment', exact: true }).click();
+  await page.getByLabel('Sender account', { exact: true }).selectOption('ACC-100003');
+  await page.getByLabel('Receiver account', { exact: true }).selectOption('ACC-100001');
   await page.getByLabel('Amount', { exact: true }).fill('10.00');
-  await page.getByRole('button', { name: 'Post synthetic transfer' }).click();
+  await page.getByRole('button', { name: 'Submit Synthetic Payment' }).click();
+  await expect(page.getByRole('dialog')).toContainText('SGD 10.00');
+  await page.getByRole('button', { name: 'Close details' }).click();
   await expect(page.locator('tbody tr')).toHaveCount(3);
   await page.reload();
   await expect(page.locator('tbody tr')).toHaveCount(3);
@@ -76,6 +80,9 @@ test('synthetic transfer remains consistent across portals and refresh', async (
   await expect(page.locator('tbody tr').filter({ hasText: 'Alex Tan' })).toContainText('SGD 44,010.00');
   await page.goto('/payments/transactions?transaction=TXN-1003');
   await expect(page.getByRole('dialog')).toContainText('SGD 10.00');
+  await page.goto('/core-banking/journals');
+  await expect(page.getByRole('heading', { name: 'Backend connection required' })).toBeVisible();
+  await expect(page.locator('tr[data-journal-id]')).toHaveCount(0);
 });
 
 test('small screens scroll the table without overflowing the page', async ({ page }) => {

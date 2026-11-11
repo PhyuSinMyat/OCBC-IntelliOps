@@ -20,7 +20,11 @@ def parse_case_id(case_id):
 
 
 def get_case(db, case_id, lock=False):
+    from sqlalchemy.orm import defer
+    from shared.schema import capabilities
     query = select(ExceptionCase).where(ExceptionCase.id == parse_case_id(case_id))
+    if not capabilities(db)['cases']:
+        query = query.options(defer(ExceptionCase.related_transaction_id))
     case = db.scalar(query.with_for_update() if lock else query)
     if case is None:
         raise CaseError("Exception case not found.", 404)
@@ -35,7 +39,11 @@ def case_detail(db, case):
     journal = db.get(LedgerJournal, record.journal_id) if record and record.journal_id else None
     actions = db.scalars(select(ExceptionCaseAction).where(ExceptionCaseAction.exception_id == case.id)
                          .order_by(ExceptionCaseAction.created_at, ExceptionCaseAction.id)).all()
-    return dict(id=f"CASE-{case.id:06d}", transactionId=tx.reference, exceptionType=case.exception_type,
+    from shared.schema import capabilities
+    related_id = case.related_transaction_id if capabilities(db)['cases'] else None
+    related = db.get(Transaction, related_id) if related_id else None
+    return dict(id=f"CASE-{case.id:06d}", transactionId=tx.reference,
+                relatedTransactionId=related.reference if related else (case.evidence or {}).get('originalReference'), exceptionType=case.exception_type,
                 severity=case.severity, status=case.status, evidence=case.evidence or {},
                 createdAt=aware(case.created_at), updatedAt=aware(case.updated_at),
                 resolvedAt=aware(case.resolved_at), resolutionSummary=case.resolution_summary,

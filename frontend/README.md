@@ -1,5 +1,13 @@
 # IntelliOps frontend
 
+The primary application mode is FastAPI/PostgreSQL-backed. Configure the public
+`VITE_BANKING_API_URL` in `.env.local` (see `.env.example`), start the normal FastAPI
+service, and run `npm.cmd run dev`. Open only the normal Vite URL. An empty API URL
+explicitly selects the separate browser-only demonstration. Backend errors never
+switch to that mode or import its browser records. See
+[AUTHORITATIVE_BACKEND_REPORT.md](../AUTHORITATIVE_BACKEND_REPORT.md) for migration
+status, diagnostics, exact startup commands and verification.
+
 Payment Processing at `/payments/transactions` uses `src/portals/payment-processing/TransactionsPage.jsx`. It includes four derived KPI counts, sender/receiver details, initiation/completion timestamps, combined search/status/currency/date filters, sorting and pagination. The drawer has Overview, Processing History and Related Records tabs. Create Synthetic Payment opens a validated form with optional admin scenario controls. Filters persist in the browser tab. Missing journals and unavailable parties stay explicit.
 
 Shared header and responsive navigation for the three synthetic banking portals. Accounts retains eight fictional accounts, search, filters and its details drawer. Balances and posted history derive from the same shared synthetic records displayed in Ledger Journals and Payments. Record links open matching details; unknown references show an unavailable state. Local simulation is the default. An optional authenticated backend connection supports controlled payment processing.

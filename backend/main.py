@@ -34,7 +34,7 @@ app.add_middleware(
     ])),
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type"],
+    allow_headers=["Authorization", "Content-Type", "X-Investigation-Request-ID"],
 )
 
 
@@ -64,8 +64,8 @@ app.include_router(intelliops_router)
 app.include_router(investigation_router)
 
 
-# Apply schema changes explicitly with
-# `alembic upgrade head` before startup.
+# Preserve existing Alembic history. Future schema changes use separately
+# approved backend/sql scripts; startup never applies schema changes.
 
 
 @app.get("/")

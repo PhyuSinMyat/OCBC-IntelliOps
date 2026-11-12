@@ -1,6 +1,8 @@
 """Typed source projection and a separate, closed model-input boundary."""
 import json
 import re
+from datetime import datetime
+from decimal import Decimal
 from pydantic import ValidationError
 from .investigation_schemas import SourceEventData
 
@@ -77,6 +79,16 @@ def model_evidence(evidence):
             parsed = {}
         row['sourceData'] = parsed if operational and row['sourceValidation'].get('status') in {'VALID', 'PARTIAL'} else {}
         safe['events'].append(row)
+    # Exact, non-causal display units derived from the existing source cents.
+    for record in [safe['original'], safe['duplicate'], *safe['entries']]:
+        if record is not None:
+            record['amountMajor'] = format(Decimal(record['amountCents']) / 100, '.2f')
+    ordered = sorted(s.get('requests', []), key=lambda r: r['receivedAt'])
+    safe['requestChronology'] = []
+    for prior, later in zip(ordered, ordered[1:]):
+        delta = datetime.fromisoformat(later['receivedAt']) - datetime.fromisoformat(prior['receivedAt'])
+        safe['requestChronology'].append(dict(earlierRequestId=prior['id'], laterRequestId=later['id'],
+            receivedIntervalSeconds=format(delta.total_seconds(), '.6f')))
     return dict(snapshot=safe, financial_verification=financial_verification(evidence),
         evidence_references=evidence['evidence_references'],
         retrieved_at=evidence.get('retrieved_at'))

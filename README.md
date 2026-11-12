@@ -332,12 +332,12 @@ The `logs/` captures were reported as **Git-ignored**, so teammates may not rece
 
 ## Database and migrations
 
-- Backend uses **SQLAlchemy** and **Alembic** with **Supabase PostgreSQL** as the intended authoritative synthetic operational database.
+- Backend uses **SQLAlchemy** with **Supabase PostgreSQL** as the authoritative synthetic operational database. Existing Alembic history is preserved; future changes use separately approved direct SQL.
 - The team's latest verified deployed revision was reported as **`20261111_08`** on 12 November 2026. This is a **point-in-time report**, not an instruction to migrate or proof every environment matches.
 - Existing records include payments/instructions, request history, processing events, accounts, ledger journals/entries, exception cases and evidence-related records. The project also has batch and audit infrastructure.
-- The original README's four-schema/21-entity ERD was an **early proposal** and must **not** be treated as the current physical schema. Use **actual SQLAlchemy models and Alembic history** for schema truth.
+- The original README's four-schema/21-entity ERD was an **early proposal** and must **not** be treated as the current physical schema. Compare actual PostgreSQL schema with SQLAlchemy models, preserved Alembic history and approved SQL records.
 - Do not reset/seed shared Supabase, delete historical rows, modify posted entries, or automatically apply migrations to a shared environment.
-- For schema verification, compare `alembic current`/`alembic heads` (as configured in this repo) with the database's `alembic_version`. Check the project's migration documentation before running upgrade commands.
+- For schema verification, inspect PostgreSQL metadata and the existing `alembic_version` read-only. Do not create new Alembic files or run revision/upgrade/downgrade; future changes require reviewed `backend/sql` statements and explicit approval before execution.
 - Monetary correctness: use exact decimal amounts, valid journal-to-payment associations, separately balanced debit/credit totals, and ledger-derived balances. A balanced journal can still be the *wrong* financial execution.
 
 ## Local development and backend connection
@@ -514,3 +514,13 @@ The original README refers to additional repository documents that may contain d
 ---
 
 **Project principle:** *Detect accurately. Investigate with evidence. Act only within policy. Verify the actual outcome. Audit every step.*
+
+## Phase 2 AI Investigation handoff
+
+See [the teammate handoff](docs/AI_INVESTIGATION_HANDOFF.md) for architecture,
+setup, environment variables, saved-history APIs, test commands and limitations.
+The approved `backend/sql/001_investigation_records.sql` is already deployed in
+the shared development database, and the accepted A/B/C reports are persisted.
+**Do not rerun the SQL or reimport reports as a setup step.** Saved-history reads
+and refreshes do not call OpenAI; an explicit new investigation may incur cost.
+Recommendations and Resolution handoffs remain human-review-only proposals.

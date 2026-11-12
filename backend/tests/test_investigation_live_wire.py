@@ -81,7 +81,8 @@ class ExistingCaseWireTests(unittest.TestCase):
         app.dependency_overrides[get_investigation_provider] = lambda: provider
         try:
             with patch('modules.intelliops.investigation_router.collect', return_value=deepcopy(evidence)), \
-                 patch.dict(os.environ, {'OPENAI_API_KEY': 'offline-mock-only', 'OPENAI_MODEL': 'offline-wire-test'}), TestClient(app) as client:
+                 patch.dict(os.environ, {'OPENAI_API_KEY': 'offline-mock-only', 'OPENAI_MODEL': 'offline-wire-test',
+                     'INTELLIOPS_INVESTIGATION_PERSISTENCE': 'false'}), TestClient(app) as client:
                 # This POST is in-process TestClient, not a request to the live server.
                 response = client.post(f'/api/exceptions/{case_id}/investigations')
             self.assertEqual(response.status_code, 200, response.text)

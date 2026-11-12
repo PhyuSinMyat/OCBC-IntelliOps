@@ -34,6 +34,7 @@ class EvidencePhase1Tests(unittest.TestCase):
         with Session(self.engine) as db, db.begin():
             seed_demo(db)
         self.guards = patch.dict(os.environ, {'INTELLIOPS_ENVIRONMENT': 'test', 'INTELLIOPS_ENABLE_RETRY_FAULT': 'true',
+            'INTELLIOPS_INVESTIGATION_PERSISTENCE': 'false',
             'INTELLIOPS_SYNTHETIC_ACCOUNT_REFS': 'ACC-100003,ACC-100001'})
         self.guards.start()
 

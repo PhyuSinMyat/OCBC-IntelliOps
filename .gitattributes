@@ -1,0 +1,2 @@
+# Preserve the exact deployed SQL checksum across Windows checkouts.
+backend/sql/001_investigation_records.sql text eol=lf

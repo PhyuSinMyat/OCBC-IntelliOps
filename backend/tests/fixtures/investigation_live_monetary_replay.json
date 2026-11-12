@@ -1,0 +1,1416 @@
+{
+  "CASE-000011": {
+    "analysis": {
+      "diagnosis_classification": "CONFIRMED_DUPLICATE_REQUEST",
+      "root_cause_code": "AUTOMATIC_RETRY_AFTER_ACK_TIMEOUT",
+      "root_cause_title": "Automatic retry after acknowledgement timeout caused a second execution under the same instruction",
+      "root_cause_explanation": "The records show one customer-originated request and then a system-originated retry tied to the same business instruction. Request 1caca9dd-3b63-4482-b290-ffa404164f84 was received first, completed successfully, and posted a verified journal. After an ACK timeout and retry scheduling, request f0385f1f-12b8-4796-9ecc-15c828ed65ae was submitted as an automatic retry referencing the original payment and the same correlation/business instruction, then also completed and posted a verified journal. This supports a shared-instruction duplicate request/execution pattern rather than two independently authorized instructions. The exact physical trigger for the repeat is not evidenced; the records only show the system retry path after timeout.",
+      "root_cause_evidence_refs": [
+        "request:1caca9dd-3b63-4482-b290-ffa404164f84",
+        "request:f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+        "event:112",
+        "event:113",
+        "event:114",
+        "event:116",
+        "event:123",
+        "journal:JRN-276B983C2AC04A0B",
+        "journal:JRN-FF94768778E34A1A",
+        "entry:JRN-276B983C2AC04A0B-C",
+        "entry:JRN-276B983C2AC04A0B-D",
+        "entry:JRN-FF94768778E34A1A-C",
+        "entry:JRN-FF94768778E34A1A-D"
+      ],
+      "financial_classification": "DOUBLE_POSTING_CONFIRMED",
+      "facts": [
+        {
+          "statement": "The case is open for a duplicate transaction exception involving TXN-276B983C2AC04A0B and TXN-FF94768778E34A1A.",
+          "evidence_refs": [
+            "case:CASE-000011"
+          ]
+        },
+        {
+          "statement": "The first payment was customer-originated, received at 2026-11-11T15:40:40.269373+00:00, and completed with posting.",
+          "evidence_refs": [
+            "request:1caca9dd-3b63-4482-b290-ffa404164f84",
+            "event:103",
+            "event:104",
+            "event:109",
+            "event:110",
+            "event:111"
+          ]
+        },
+        {
+          "statement": "The second payment was system-originated as an automatic retry, received 5 seconds later, and completed with posting.",
+          "evidence_refs": [
+            "request:f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "event:112",
+            "event:113",
+            "event:114",
+            "event:115",
+            "event:116",
+            "event:117",
+            "event:118",
+            "event:119",
+            "event:120",
+            "event:121",
+            "event:122",
+            "event:123"
+          ]
+        },
+        {
+          "statement": "Both payments share the same sender, receiver, amount of 1000 SGD, and business reference PAY-276B983C2AC04A0B.",
+          "evidence_refs": [
+            "payment:TXN-276B983C2AC04A0B",
+            "payment:TXN-FF94768778E34A1A"
+          ]
+        },
+        {
+          "statement": "Both journals are posted and each has matching debit and credit entries for 1000 SGD.",
+          "evidence_refs": [
+            "journal:JRN-276B983C2AC04A0B",
+            "journal:JRN-FF94768778E34A1A",
+            "entry:JRN-276B983C2AC04A0B-C",
+            "entry:JRN-276B983C2AC04A0B-D",
+            "entry:JRN-FF94768778E34A1A-C",
+            "entry:JRN-FF94768778E34A1A-D"
+          ]
+        },
+        {
+          "statement": "Financial verification confirms two completed posted payments and two valid posted journals, with SGD 20.00 total debit and SGD 20.00 total credit.",
+          "evidence_refs": [
+            "journal:JRN-276B983C2AC04A0B",
+            "journal:JRN-FF94768778E34A1A",
+            "entry:JRN-276B983C2AC04A0B-C",
+            "entry:JRN-276B983C2AC04A0B-D",
+            "entry:JRN-FF94768778E34A1A-C",
+            "entry:JRN-FF94768778E34A1A-D"
+          ]
+        }
+      ],
+      "hypotheses": [
+        {
+          "statement": "The duplicate execution was caused by an automatic retry after an acknowledgement timeout rather than a second independent customer instruction.",
+          "evidence_refs": [
+            "event:112",
+            "event:113",
+            "event:114",
+            "event:116",
+            "request:1caca9dd-3b63-4482-b290-ffa404164f84",
+            "request:f0385f1f-12b8-4796-9ecc-15c828ed65ae"
+          ]
+        },
+        {
+          "statement": "The repeated submission may have been driven by system retry logic; the physical user action, if any, is not evidenced.",
+          "evidence_refs": [
+            "event:112",
+            "event:113",
+            "event:114",
+            "request:f0385f1f-12b8-4796-9ecc-15c828ed65ae"
+          ]
+        }
+      ],
+      "uncertainty": [
+        "The primary records do not show a human authorization event for the second request; outcome fields are NOT_RECORDED.",
+        "The literal trigger for the retry cannot be determined from the available data, and no input-device evidence is present.",
+        "A shared instruction is strongly indicated by the retry linkage and common business instruction, but the records do not expose the detector configuration or exact causal rule path."
+      ],
+      "recommended_action_code": "ESCALATE_DUPLICATE_FINANCIAL_EXECUTION",
+      "recommendation_reason": "Two verified posted payments exist under the same business instruction, with the second generated as an automatic retry after timeout. This is a confirmed shared-instruction duplicate execution pattern requiring human review, not automatic correction."
+    },
+    "model_input": {
+      "snapshot": {
+        "caseRecord": {
+          "id": "CASE-000011",
+          "transactionId": "TXN-FF94768778E34A1A",
+          "relatedTransactionId": "TXN-276B983C2AC04A0B",
+          "exceptionType": "Duplicate Transaction",
+          "severity": "HIGH",
+          "status": "OPEN",
+          "createdAt": "2026-11-11T16:10:39.733008+00:00"
+        },
+        "original": {
+          "id": "TXN-276B983C2AC04A0B",
+          "paymentId": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+          "senderId": "VERIFY-AUTH-SENDER",
+          "receiverId": "VERIFY-AUTH-RECEIVER",
+          "amountCents": 1000,
+          "currency": "SGD",
+          "status": "Completed",
+          "createdAt": "2026-11-11T15:40:41.269373+00:00",
+          "completedAt": "2026-11-11T15:40:41.269373+00:00",
+          "businessReference": "PAY-276B983C2AC04A0B",
+          "originalPaymentId": null
+        },
+        "duplicate": {
+          "id": "TXN-FF94768778E34A1A",
+          "paymentId": "bbca0f5a-5c9f-469f-a255-61e86a69f9a2",
+          "senderId": "VERIFY-AUTH-SENDER",
+          "receiverId": "VERIFY-AUTH-RECEIVER",
+          "amountCents": 1000,
+          "currency": "SGD",
+          "status": "Completed",
+          "createdAt": "2026-11-11T15:40:46.269373+00:00",
+          "completedAt": "2026-11-11T15:40:46.269373+00:00",
+          "businessReference": "PAY-276B983C2AC04A0B",
+          "originalPaymentId": "b392380f-16f0-4708-98d9-fb3b6742c2a6"
+        },
+        "linkConflict": false,
+        "accounts": [
+          {
+            "id": "VERIFY-AUTH-SENDER",
+            "currency": "SGD"
+          },
+          {
+            "id": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD"
+          }
+        ],
+        "journals": [
+          {
+            "id": "JRN-276B983C2AC04A0B",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "sourcePaymentId": "TXN-276B983C2AC04A0B",
+            "status": "Posted",
+            "currency": "SGD",
+            "postedAt": "2026-11-11T15:40:41.269373+00:00"
+          },
+          {
+            "id": "JRN-FF94768778E34A1A",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "sourcePaymentId": "TXN-FF94768778E34A1A",
+            "status": "Posted",
+            "currency": "SGD",
+            "postedAt": "2026-11-11T15:40:46.269373+00:00"
+          }
+        ],
+        "entries": [
+          {
+            "id": "JRN-276B983C2AC04A0B-C",
+            "journalId": "JRN-276B983C2AC04A0B",
+            "accountId": "VERIFY-AUTH-RECEIVER",
+            "side": "Credit",
+            "amountCents": 1000,
+            "currency": "SGD",
+            "posted": true
+          },
+          {
+            "id": "JRN-276B983C2AC04A0B-D",
+            "journalId": "JRN-276B983C2AC04A0B",
+            "accountId": "VERIFY-AUTH-SENDER",
+            "side": "Debit",
+            "amountCents": 1000,
+            "currency": "SGD",
+            "posted": true
+          },
+          {
+            "id": "JRN-FF94768778E34A1A-C",
+            "journalId": "JRN-FF94768778E34A1A",
+            "accountId": "VERIFY-AUTH-RECEIVER",
+            "side": "Credit",
+            "amountCents": 1000,
+            "currency": "SGD",
+            "posted": true
+          },
+          {
+            "id": "JRN-FF94768778E34A1A-D",
+            "journalId": "JRN-FF94768778E34A1A",
+            "accountId": "VERIFY-AUTH-SENDER",
+            "side": "Debit",
+            "amountCents": 1000,
+            "currency": "SGD",
+            "posted": true
+          }
+        ],
+        "instructions": [
+          {
+            "id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+            "transactionReference": "TXN-276B983C2AC04A0B",
+            "idempotencyKeyHash": "5b4c06f5a1d97d606e37c869e74090244da12aedd860021ac3cb971737b4017f"
+          },
+          {
+            "id": "bbca0f5a-5c9f-469f-a255-61e86a69f9a2",
+            "transactionReference": "TXN-FF94768778E34A1A",
+            "idempotencyKeyHash": "23125efbfd835f248d0d957235eb3ca86c4349849d609ebca67e242c9d1de992"
+          }
+        ],
+        "requests": [
+          {
+            "id": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "paymentId": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+            "paymentReference": "TXN-276B983C2AC04A0B",
+            "businessInstructionId": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+            "origin": "CUSTOMER",
+            "retryOfRequestId": null,
+            "idempotencyKeyHash": "892af283132de89e3bcad055e90afb7416ec357ec8b7f9a49ade3a81a31702ed",
+            "authorizationId": null,
+            "correlationId": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+            "receivedAt": "2026-11-11T15:40:40.269373+00:00",
+            "paymentStatus": "Completed",
+            "outcome": null,
+            "outcomeAvailability": "NOT_RECORDED",
+            "integrityValid": true,
+            "issues": [],
+            "retryValid": false,
+            "authorizationValid": false
+          },
+          {
+            "id": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "paymentId": "bbca0f5a-5c9f-469f-a255-61e86a69f9a2",
+            "paymentReference": "TXN-FF94768778E34A1A",
+            "businessInstructionId": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+            "origin": "SYSTEM",
+            "retryOfRequestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "idempotencyKeyHash": "b4da3e50fcf19fd48946cf19a43f66dbfd51b423b7bd4205cfeb0873ca344b3e",
+            "authorizationId": null,
+            "correlationId": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+            "receivedAt": "2026-11-11T15:40:45.269373+00:00",
+            "paymentStatus": "Completed",
+            "outcome": null,
+            "outcomeAvailability": "NOT_RECORDED",
+            "integrityValid": true,
+            "issues": [],
+            "retryValid": true,
+            "authorizationValid": false
+          }
+        ],
+        "legacyPostings": [],
+        "events": [
+          {
+            "id": "103",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:40:40.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "CLIENT_SUBMISSION",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "trigger": "USER_SUBMIT",
+              "intent_id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+              "submission_id": "1caca9dd-3b63-4482-b290-ffa404164f84",
+              "request_id": "1caca9dd-3b63-4482-b290-ffa404164f84",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "104",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:40:40.369373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PAYMENT_REQUEST_RECEIVED",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "intent_id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+              "request_id": "1caca9dd-3b63-4482-b290-ffa404164f84",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "105",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:40:41.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PAYMENT_CREATED",
+            "sourceData": {}
+          },
+          {
+            "id": "106",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:40:41.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "VALIDATION_STARTED",
+            "sourceData": {}
+          },
+          {
+            "id": "107",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:40:41.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "VALIDATION_PASSED",
+            "sourceData": {}
+          },
+          {
+            "id": "108",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:40:41.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PROCESSING_STARTED",
+            "sourceData": {}
+          },
+          {
+            "id": "109",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:40:41.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "LEDGER_POSTED",
+            "sourceData": {}
+          },
+          {
+            "id": "110",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "COMPLETED",
+            "occurredAt": "2026-11-11T15:40:41.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PROCESSING_COMPLETED",
+            "sourceData": {}
+          },
+          {
+            "id": "111",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "COMPLETED",
+            "occurredAt": "2026-11-11T15:40:42.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "LEDGER_POSTING_CONFIRMED",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "intent_id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+              "request_id": "1caca9dd-3b63-4482-b290-ffa404164f84",
+              "source_component": "payment_simulator",
+              "journal_reference": "JRN-276B983C2AC04A0B"
+            }
+          },
+          {
+            "id": "112",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "COMPLETED",
+            "occurredAt": "2026-11-11T15:40:43.269373+00:00",
+            "correlationId": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "ACK_TIMEOUT",
+            "sourceData": {
+              "origin": "SYSTEM",
+              "intent_id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+              "correlation_id": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+              "request_id": "1caca9dd-3b63-4482-b290-ffa404164f84",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "113",
+            "paymentId": "TXN-276B983C2AC04A0B",
+            "requestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "status": "COMPLETED",
+            "occurredAt": "2026-11-11T15:40:44.269373+00:00",
+            "correlationId": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "RETRY_SCHEDULED",
+            "sourceData": {
+              "origin": "SYSTEM",
+              "intent_id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+              "correlation_id": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+              "request_id": "1caca9dd-3b63-4482-b290-ffa404164f84",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "114",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:40:45.269373+00:00",
+            "correlationId": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "RETRY_SUBMITTED",
+            "sourceData": {
+              "origin": "SYSTEM",
+              "trigger": "AUTOMATIC_RETRY",
+              "intent_id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+              "correlation_id": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+              "original_payment_ref": "TXN-276B983C2AC04A0B",
+              "request_id": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "115",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:40:45.369373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PAYMENT_REQUEST_RECEIVED",
+            "sourceData": {
+              "origin": "SYSTEM",
+              "intent_id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+              "request_id": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "116",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:40:45.469373+00:00",
+            "correlationId": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "IDEMPOTENCY_CHECK_FAILED",
+            "sourceData": {
+              "origin": "SYSTEM",
+              "intent_id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+              "correlation_id": "112f6958-aeab-4c6b-a93e-bced361ad24e",
+              "original_payment_ref": "TXN-276B983C2AC04A0B",
+              "request_id": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+              "source_component": "payment_simulator",
+              "lookup_result": "MISS",
+              "authoritative_execution_present": true
+            }
+          },
+          {
+            "id": "117",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:40:46.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PAYMENT_CREATED",
+            "sourceData": {}
+          },
+          {
+            "id": "118",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:40:46.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "VALIDATION_STARTED",
+            "sourceData": {}
+          },
+          {
+            "id": "119",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:40:46.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "VALIDATION_PASSED",
+            "sourceData": {}
+          },
+          {
+            "id": "120",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:40:46.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PROCESSING_STARTED",
+            "sourceData": {}
+          },
+          {
+            "id": "121",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:40:46.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "LEDGER_POSTED",
+            "sourceData": {}
+          },
+          {
+            "id": "122",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "COMPLETED",
+            "occurredAt": "2026-11-11T15:40:46.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PROCESSING_COMPLETED",
+            "sourceData": {}
+          },
+          {
+            "id": "123",
+            "paymentId": "TXN-FF94768778E34A1A",
+            "requestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "status": "COMPLETED",
+            "occurredAt": "2026-11-11T15:40:47.269373+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "LEDGER_POSTING_CONFIRMED",
+            "sourceData": {
+              "origin": "SYSTEM",
+              "intent_id": "b392380f-16f0-4708-98d9-fb3b6742c2a6",
+              "request_id": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+              "source_component": "payment_simulator",
+              "journal_reference": "JRN-FF94768778E34A1A"
+            }
+          }
+        ],
+        "requestChronology": [
+          {
+            "earlierRequestId": "1caca9dd-3b63-4482-b290-ffa404164f84",
+            "laterRequestId": "f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+            "receivedIntervalSeconds": "5.000000"
+          }
+        ]
+      },
+      "financial_verification": {
+        "classification": "DOUBLE_POSTING_CONFIRMED",
+        "original": {
+          "payment_ref": "TXN-276B983C2AC04A0B",
+          "execution": "Posted",
+          "journals": [
+            "JRN-276B983C2AC04A0B"
+          ],
+          "valid_journals": [
+            "JRN-276B983C2AC04A0B"
+          ],
+          "payment_status": "COMPLETED",
+          "processing_state": "COMPLETED_POSTED",
+          "reason": "Payment-aligned ledger entries verified."
+        },
+        "duplicate": {
+          "payment_ref": "TXN-FF94768778E34A1A",
+          "execution": "Posted",
+          "journals": [
+            "JRN-FF94768778E34A1A"
+          ],
+          "valid_journals": [
+            "JRN-FF94768778E34A1A"
+          ],
+          "payment_status": "COMPLETED",
+          "processing_state": "COMPLETED_POSTED",
+          "reason": "Payment-aligned ledger entries verified."
+        },
+        "completedPaymentCount": 2,
+        "confirmedPostedJournalCount": 2,
+        "validDebitTotals": {
+          "SGD": "20.00"
+        },
+        "validCreditTotals": {
+          "SGD": "20.00"
+        },
+        "accountMovements": [
+          {
+            "accountReference": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD",
+            "debit": "0.00",
+            "credit": "20.00",
+            "net": "20.00"
+          },
+          {
+            "accountReference": "VERIFY-AUTH-SENDER",
+            "currency": "SGD",
+            "debit": "20.00",
+            "credit": "0.00",
+            "net": "-20.00"
+          }
+        ],
+        "senderFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-SENDER",
+          "currency": "SGD",
+          "debit": "20.00",
+          "credit": "0.00",
+          "net": "-20.00"
+        },
+        "receiverFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-RECEIVER",
+          "currency": "SGD",
+          "debit": "0.00",
+          "credit": "20.00",
+          "net": "20.00"
+        },
+        "journalValidation": [
+          {
+            "journalReference": "JRN-276B983C2AC04A0B",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "10.00",
+            "creditTotal": "10.00",
+            "reasons": []
+          },
+          {
+            "journalReference": "JRN-FF94768778E34A1A",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "10.00",
+            "creditTotal": "10.00",
+            "reasons": []
+          }
+        ],
+        "requestHistoryComplete": true
+      },
+      "evidence_references": [
+        "case:CASE-000011",
+        "event:103",
+        "event:104",
+        "event:105",
+        "event:106",
+        "event:107",
+        "event:108",
+        "event:109",
+        "event:110",
+        "event:111",
+        "event:112",
+        "event:113",
+        "event:114",
+        "event:115",
+        "event:116",
+        "event:117",
+        "event:118",
+        "event:119",
+        "event:120",
+        "event:121",
+        "event:122",
+        "event:123",
+        "journal:JRN-276B983C2AC04A0B",
+        "journal:JRN-FF94768778E34A1A",
+        "entry:JRN-276B983C2AC04A0B-C",
+        "entry:JRN-276B983C2AC04A0B-D",
+        "entry:JRN-FF94768778E34A1A-C",
+        "entry:JRN-FF94768778E34A1A-D",
+        "instruction:b392380f-16f0-4708-98d9-fb3b6742c2a6",
+        "instruction:bbca0f5a-5c9f-469f-a255-61e86a69f9a2",
+        "request:1caca9dd-3b63-4482-b290-ffa404164f84",
+        "request:f0385f1f-12b8-4796-9ecc-15c828ed65ae",
+        "payment:TXN-276B983C2AC04A0B",
+        "payment:TXN-FF94768778E34A1A"
+      ],
+      "retrieved_at": "2026-11-12T07:16:18.537199+00:00"
+    },
+    "analysisSha256": "cb66b5491186c97428ee007ad6dc5e5adfb5aba125696b1df853de569d1ddd98",
+    "provenance": "..\\logs\\phase2-controlled-B\\CASE-000011.json"
+  },
+  "CASE-000010": {
+    "analysis": {
+      "diagnosis_classification": "CONFIRMED_DUPLICATE_REQUEST",
+      "root_cause_code": "SHARED_INTENT_REPEATED_SUBMISSION_HELD",
+      "root_cause_title": "Shared customer intent with repeated submission held before execution",
+      "root_cause_explanation": "The two requests share the same business instruction and intent anchor, and the later request was received 5 seconds after the first. The first payment completed and posted once, while the second was held before execution and explicitly matched duplicate control to the earlier payment. This supports a confirmed duplicate request pattern rather than two independently authorized instructions. The evidence does not show the physical trigger, so the cause is described as repeated submission under shared intent rather than a literal double-click. Verified facts: the original request completed and posted once via journal JRN-D9269292EE384041, and the duplicate request remained held with no posting. The duplicate-control events indicate the system recognized the match to the earlier payment before execution.",
+      "root_cause_evidence_refs": [
+        "request:6995b4a1-9960-442b-ab18-9807dcb0294c",
+        "request:af45a7cc-67df-42d4-9ac3-af847b5425b5",
+        "instruction:30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+        "payment:TXN-D9269292EE384041",
+        "payment:TXN-1537E760E477467B",
+        "journal:JRN-D9269292EE384041",
+        "entry:JRN-D9269292EE384041-C",
+        "entry:JRN-D9269292EE384041-D",
+        "event:97",
+        "event:99",
+        "event:101",
+        "event:102"
+      ],
+      "financial_classification": "SINGLE_POSTING_CONFIRMED",
+      "facts": [
+        {
+          "statement": "The original payment completed and posted once through journal JRN-D9269292EE384041.",
+          "evidence_refs": [
+            "payment:TXN-D9269292EE384041",
+            "journal:JRN-D9269292EE384041",
+            "entry:JRN-D9269292EE384041-C",
+            "entry:JRN-D9269292EE384041-D",
+            "event:95",
+            "event:96",
+            "event:97"
+          ]
+        },
+        {
+          "statement": "The duplicate payment was held before execution and has no posted journal in this snapshot.",
+          "evidence_refs": [
+            "payment:TXN-1537E760E477467B",
+            "event:99",
+            "event:100",
+            "event:101",
+            "event:102"
+          ]
+        },
+        {
+          "statement": "Both requests reference the same business instruction identifier.",
+          "evidence_refs": [
+            "request:6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "request:af45a7cc-67df-42d4-9ac3-af847b5425b5",
+            "instruction:30dbc4e9-55b1-4783-9131-ce0e46bb56fc"
+          ]
+        },
+        {
+          "statement": "The later request was received 5 seconds after the earlier request.",
+          "evidence_refs": [
+            "request:6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "request:af45a7cc-67df-42d4-9ac3-af847b5425b5",
+            "request:af45a7cc-67df-42d4-9ac3-af847b5425b5"
+          ]
+        },
+        {
+          "statement": "Duplicate control matched the later request to the earlier payment before execution and blocked posting.",
+          "evidence_refs": [
+            "event:101",
+            "event:102",
+            "payment:TXN-1537E760E477467B"
+          ]
+        }
+      ],
+      "hypotheses": [
+        {
+          "statement": "The repeated submission may reflect the customer resubmitting the same payment intent after the first submission, but the source does not identify the physical trigger or user action beyond USER_SUBMIT.",
+          "evidence_refs": [
+            "event:89",
+            "event:99",
+            "request:6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "request:af45a7cc-67df-42d4-9ac3-af847b5425b5"
+          ]
+        }
+      ],
+      "uncertainty": [
+        "The exact user trigger is unknown; the data shows USER_SUBMIT but not whether this was a retry, refresh, or other action.",
+        "OutcomeAvailability is NOT_RECORDED for both requests, so no additional downstream outcome details are available beyond the held status.",
+        "The detector configuration and thresholds are not provided, so no rule-level decision trace can be inferred beyond the recorded duplicate-control events."
+      ],
+      "recommended_action_code": "CLOSE_HELD_DUPLICATE",
+      "recommendation_reason": "This is a confirmed shared-intent duplicate request where one payment posted and the repeat was held before execution. A human closure review is appropriate, with no automatic financial correction."
+    },
+    "model_input": {
+      "snapshot": {
+        "caseRecord": {
+          "id": "CASE-000010",
+          "transactionId": "TXN-1537E760E477467B",
+          "relatedTransactionId": "TXN-D9269292EE384041",
+          "exceptionType": "Duplicate Transaction",
+          "severity": "HIGH",
+          "status": "OPEN",
+          "createdAt": "2026-11-11T16:10:39.733008+00:00"
+        },
+        "original": {
+          "id": "TXN-D9269292EE384041",
+          "paymentId": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+          "senderId": "VERIFY-AUTH-SENDER",
+          "receiverId": "VERIFY-AUTH-RECEIVER",
+          "amountCents": 2500,
+          "currency": "SGD",
+          "status": "Completed",
+          "createdAt": "2026-11-11T15:38:44.404734+00:00",
+          "completedAt": "2026-11-11T15:38:44.404734+00:00",
+          "businessReference": "PAY-D9269292EE384041",
+          "originalPaymentId": null
+        },
+        "duplicate": {
+          "id": "TXN-1537E760E477467B",
+          "paymentId": "02096935-b17e-4c44-8d98-3c82fb5889b2",
+          "senderId": "VERIFY-AUTH-SENDER",
+          "receiverId": "VERIFY-AUTH-RECEIVER",
+          "amountCents": 2500,
+          "currency": "SGD",
+          "status": "Held",
+          "createdAt": "2026-11-11T15:38:48.404734+00:00",
+          "completedAt": null,
+          "businessReference": "PAY-D9269292EE384041",
+          "originalPaymentId": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc"
+        },
+        "linkConflict": false,
+        "accounts": [
+          {
+            "id": "VERIFY-AUTH-SENDER",
+            "currency": "SGD"
+          },
+          {
+            "id": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD"
+          }
+        ],
+        "journals": [
+          {
+            "id": "JRN-D9269292EE384041",
+            "paymentId": "TXN-D9269292EE384041",
+            "sourcePaymentId": "TXN-D9269292EE384041",
+            "status": "Posted",
+            "currency": "SGD",
+            "postedAt": "2026-11-11T15:38:44.404734+00:00"
+          }
+        ],
+        "entries": [
+          {
+            "id": "JRN-D9269292EE384041-C",
+            "journalId": "JRN-D9269292EE384041",
+            "accountId": "VERIFY-AUTH-RECEIVER",
+            "side": "Credit",
+            "amountCents": 2500,
+            "currency": "SGD",
+            "posted": true
+          },
+          {
+            "id": "JRN-D9269292EE384041-D",
+            "journalId": "JRN-D9269292EE384041",
+            "accountId": "VERIFY-AUTH-SENDER",
+            "side": "Debit",
+            "amountCents": 2500,
+            "currency": "SGD",
+            "posted": true
+          }
+        ],
+        "instructions": [
+          {
+            "id": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+            "transactionReference": "TXN-D9269292EE384041",
+            "idempotencyKeyHash": "f0a4f79b9bf77a9685214917093c941dd7d0fd47adc4fba68ccc07483c4151df"
+          },
+          {
+            "id": "02096935-b17e-4c44-8d98-3c82fb5889b2",
+            "transactionReference": "TXN-1537E760E477467B",
+            "idempotencyKeyHash": "3029a806bbfee71c3a6bea0a728c7ea26dc14c5dab2a5058a33bfa29d2e3e501"
+          }
+        ],
+        "requests": [
+          {
+            "id": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "paymentId": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+            "paymentReference": "TXN-D9269292EE384041",
+            "businessInstructionId": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+            "origin": "CUSTOMER",
+            "retryOfRequestId": null,
+            "idempotencyKeyHash": "efb3fe2085be15f358777aa56a7a6e4de83141a17a73033efe724e36289c4856",
+            "authorizationId": null,
+            "correlationId": "fdd591de-d949-4867-bf91-ba34d7423bc1",
+            "receivedAt": "2026-11-11T15:38:43.404734+00:00",
+            "paymentStatus": "Completed",
+            "outcome": null,
+            "outcomeAvailability": "NOT_RECORDED",
+            "integrityValid": true,
+            "issues": [],
+            "retryValid": false,
+            "authorizationValid": false
+          },
+          {
+            "id": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+            "paymentId": "02096935-b17e-4c44-8d98-3c82fb5889b2",
+            "paymentReference": "TXN-1537E760E477467B",
+            "businessInstructionId": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+            "origin": "CUSTOMER",
+            "retryOfRequestId": null,
+            "idempotencyKeyHash": "21081baf28bc08fcb64a58d19adcd716b07c2719b95f2c6b71f378e14b4dd7db",
+            "authorizationId": null,
+            "correlationId": "fdd591de-d949-4867-bf91-ba34d7423bc1",
+            "receivedAt": "2026-11-11T15:38:48.404734+00:00",
+            "paymentStatus": "Held",
+            "outcome": null,
+            "outcomeAvailability": "NOT_RECORDED",
+            "integrityValid": true,
+            "issues": [],
+            "retryValid": false,
+            "authorizationValid": false
+          }
+        ],
+        "legacyPostings": [],
+        "events": [
+          {
+            "id": "89",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:38:43.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "CLIENT_SUBMISSION",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "trigger": "USER_SUBMIT",
+              "intent_id": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+              "submission_id": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+              "request_id": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "90",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:38:43.504734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PAYMENT_REQUEST_RECEIVED",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "intent_id": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+              "request_id": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "91",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "PENDING",
+            "occurredAt": "2026-11-11T15:38:44.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PAYMENT_CREATED",
+            "sourceData": {}
+          },
+          {
+            "id": "92",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:38:44.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "VALIDATION_STARTED",
+            "sourceData": {}
+          },
+          {
+            "id": "93",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:38:44.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "VALIDATION_PASSED",
+            "sourceData": {}
+          },
+          {
+            "id": "94",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:38:44.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PROCESSING_STARTED",
+            "sourceData": {}
+          },
+          {
+            "id": "95",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "PROCESSING",
+            "occurredAt": "2026-11-11T15:38:44.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "LEDGER_POSTED",
+            "sourceData": {}
+          },
+          {
+            "id": "96",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "COMPLETED",
+            "occurredAt": "2026-11-11T15:38:44.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "UNSTRUCTURED",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PROCESSING_COMPLETED",
+            "sourceData": {}
+          },
+          {
+            "id": "97",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "COMPLETED",
+            "occurredAt": "2026-11-11T15:38:45.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "LEDGER_POSTING_CONFIRMED",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "intent_id": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+              "request_id": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+              "source_component": "payment_simulator",
+              "journal_reference": "JRN-D9269292EE384041"
+            }
+          },
+          {
+            "id": "98",
+            "paymentId": "TXN-D9269292EE384041",
+            "requestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "status": "COMPLETED",
+            "occurredAt": "2026-11-11T15:38:46.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "CLIENT_CONFIRMATION_DELAYED",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "intent_id": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+              "request_id": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "99",
+            "paymentId": "TXN-1537E760E477467B",
+            "requestId": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+            "status": "HELD",
+            "occurredAt": "2026-11-11T15:38:48.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "CLIENT_SUBMISSION",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "trigger": "USER_SUBMIT",
+              "intent_id": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+              "submission_id": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+              "request_id": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "100",
+            "paymentId": "TXN-1537E760E477467B",
+            "requestId": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+            "status": "HELD",
+            "occurredAt": "2026-11-11T15:38:48.504734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "PAYMENT_REQUEST_RECEIVED",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "intent_id": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+              "request_id": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+              "source_component": "payment_simulator"
+            }
+          },
+          {
+            "id": "101",
+            "paymentId": "TXN-1537E760E477467B",
+            "requestId": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+            "status": "HELD",
+            "occurredAt": "2026-11-11T15:38:49.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "DUPLICATE_CONTROL_MATCH",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "intent_id": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+              "request_id": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+              "source_component": "payment_simulator",
+              "matched_payment_ref": "TXN-D9269292EE384041"
+            }
+          },
+          {
+            "id": "102",
+            "paymentId": "TXN-1537E760E477467B",
+            "requestId": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+            "status": "HELD",
+            "occurredAt": "2026-11-11T15:38:50.404734+00:00",
+            "correlationId": null,
+            "relationshipValid": true,
+            "sourceValidation": {
+              "status": "VALID",
+              "errors": [],
+              "omittedFieldCount": 0
+            },
+            "eventType": "DUPLICATE_BLOCKED",
+            "sourceData": {
+              "origin": "CUSTOMER",
+              "intent_id": "30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+              "request_id": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+              "source_component": "payment_simulator",
+              "posting_started": false
+            }
+          }
+        ],
+        "requestChronology": [
+          {
+            "earlierRequestId": "6995b4a1-9960-442b-ab18-9807dcb0294c",
+            "laterRequestId": "af45a7cc-67df-42d4-9ac3-af847b5425b5",
+            "receivedIntervalSeconds": "5.000000"
+          }
+        ]
+      },
+      "financial_verification": {
+        "classification": "SINGLE_POSTING_CONFIRMED",
+        "original": {
+          "payment_ref": "TXN-D9269292EE384041",
+          "execution": "Posted",
+          "journals": [
+            "JRN-D9269292EE384041"
+          ],
+          "valid_journals": [
+            "JRN-D9269292EE384041"
+          ],
+          "payment_status": "COMPLETED",
+          "processing_state": "COMPLETED_POSTED",
+          "reason": "Payment-aligned ledger entries verified."
+        },
+        "duplicate": {
+          "payment_ref": "TXN-1537E760E477467B",
+          "execution": "Not Started",
+          "journals": [],
+          "valid_journals": [],
+          "payment_status": "HELD",
+          "processing_state": "HELD_BEFORE_EXECUTION",
+          "reason": "Source hold/rejection precedes execution in this snapshot."
+        },
+        "completedPaymentCount": 1,
+        "confirmedPostedJournalCount": 1,
+        "validDebitTotals": {
+          "SGD": "25.00"
+        },
+        "validCreditTotals": {
+          "SGD": "25.00"
+        },
+        "accountMovements": [
+          {
+            "accountReference": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD",
+            "debit": "0.00",
+            "credit": "25.00",
+            "net": "25.00"
+          },
+          {
+            "accountReference": "VERIFY-AUTH-SENDER",
+            "currency": "SGD",
+            "debit": "25.00",
+            "credit": "0.00",
+            "net": "-25.00"
+          }
+        ],
+        "senderFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-SENDER",
+          "currency": "SGD",
+          "debit": "25.00",
+          "credit": "0.00",
+          "net": "-25.00"
+        },
+        "receiverFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-RECEIVER",
+          "currency": "SGD",
+          "debit": "0.00",
+          "credit": "25.00",
+          "net": "25.00"
+        },
+        "journalValidation": [
+          {
+            "journalReference": "JRN-D9269292EE384041",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "25.00",
+            "creditTotal": "25.00",
+            "reasons": []
+          }
+        ],
+        "requestHistoryComplete": true
+      },
+      "evidence_references": [
+        "case:CASE-000010",
+        "event:89",
+        "event:90",
+        "event:91",
+        "event:92",
+        "event:93",
+        "event:94",
+        "event:95",
+        "event:96",
+        "event:97",
+        "event:98",
+        "event:99",
+        "event:100",
+        "event:101",
+        "event:102",
+        "journal:JRN-D9269292EE384041",
+        "entry:JRN-D9269292EE384041-C",
+        "entry:JRN-D9269292EE384041-D",
+        "instruction:30dbc4e9-55b1-4783-9131-ce0e46bb56fc",
+        "instruction:02096935-b17e-4c44-8d98-3c82fb5889b2",
+        "request:6995b4a1-9960-442b-ab18-9807dcb0294c",
+        "request:af45a7cc-67df-42d4-9ac3-af847b5425b5",
+        "payment:TXN-D9269292EE384041",
+        "payment:TXN-1537E760E477467B"
+      ],
+      "retrieved_at": "2026-11-12T06:35:40.295192+00:00"
+    },
+    "analysisSha256": "deb246f99fca711fc4bfb4b7fe3f86d9064a06868492b2105c74b7c25ce525d0",
+    "provenance": "..\\logs\\phase2-action-semantics-A\\CASE-000010.json"
+  }
+}

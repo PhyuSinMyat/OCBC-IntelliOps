@@ -3,6 +3,8 @@ from datetime import datetime, timezone
 from uuid import uuid4
 from .service import CaseError
 from .investigation_projection import model_evidence, PRIVATE_VALUE
+from .investigation_validation import validate_monetary_claims, authorization_review_flags
+from .investigation_schemas import ACTION_TITLES
 
 
 def investigate(evidence, provider):
@@ -12,6 +14,7 @@ def investigate(evidence, provider):
     verification = model_input['financial_verification']
     if model_result.financial_classification != verification['classification']:
         raise CaseError('AI result contradicted verified accounting facts; no diagnosis was accepted.', 502)
+    validate_monetary_claims(model_result, model_input)
     allowed = set(evidence["evidence_references"])
     for claim in model_result.facts + model_result.hypotheses:
         if not set(claim.evidence_refs) <= allowed:
@@ -34,14 +37,15 @@ def investigate(evidence, provider):
         len(requests) >= 2 and {r['paymentReference'] for r in requests} == {a['id'], b['id']} and len({r['businessInstructionId'] for r in requests}) == 1)
     separate = consistent and len(requests) == 2 and all(r['authorizationValid'] and r['origin'] == 'CUSTOMER' and not r['retryOfRequestId'] for r in requests)
     separate = separate and len({r['businessInstructionId'] for r in requests}) == len({r['authorizationId'] for r in requests}) == 2
+    separate = separate and {r['paymentReference'] for r in requests} == {a['id'], b['id']}
     separate = separate and not any(e['eventType'] == 'RETRY_SUBMITTED' for e in s['events'])
     diagnosis, action = model_result.diagnosis_classification, model_result.recommended_action_code
     financial = verification['classification']
     if diagnosis == 'CONFIRMED_DUPLICATE_REQUEST' and not same or diagnosis == 'LEGITIMATE_SEPARATE_INSTRUCTIONS' and not separate:
         raise CaseError('AI relationship conclusion lacks consistent instruction evidence.', 502)
-    if (action == 'CLOSE_HELD_DUPLICATE' and not (same and financial == 'SINGLE_POSTING_CONFIRMED')
-        or action == 'REVIEW_FALSE_POSITIVE_CLOSURE' and not (separate and financial == 'DOUBLE_POSTING_CONFIRMED')
-        or action == 'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION' and not (same and financial == 'DOUBLE_POSTING_CONFIRMED')):
+    if (action == 'CLOSE_HELD_DUPLICATE' and not (diagnosis == 'CONFIRMED_DUPLICATE_REQUEST' and same and financial == 'SINGLE_POSTING_CONFIRMED')
+        or action == 'REVIEW_FALSE_POSITIVE_CLOSURE' and not (diagnosis == 'LEGITIMATE_SEPARATE_INSTRUCTIONS' and separate and financial == 'DOUBLE_POSTING_CONFIRMED')
+        or action == 'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION' and not (diagnosis == 'CONFIRMED_DUPLICATE_REQUEST' and same and financial == 'DOUBLE_POSTING_CONFIRMED')):
         raise CaseError('AI review recommendation is not supported by verified source facts.', 502)
     snapshot = evidence["snapshot"]
     completed = datetime.now(timezone.utc).isoformat()
@@ -52,6 +56,10 @@ def investigate(evidence, provider):
         "EXECUTION_OUTCOME_UNKNOWN": "Source or ledger evidence is incomplete or conflicting; no financial-loss amount is asserted.",
     }[financial]
     cause = model_result.root_cause_code
+    review_flags = authorization_review_flags(model_result, model_input['snapshot'], separate)
+    record = getattr(provider, 'record_outcome', None)
+    if record:
+        record('ACCEPTED_WITH_REVIEW_FLAGS' if review_flags else 'ACCEPTED')
     return dict(case_id=snapshot["caseRecord"]["id"], investigation_id=f"INV-{uuid4()}",
         run_status="COMPLETED", started_at=started, completed_at=completed,
         evidence_snapshot_at=evidence["retrieved_at"], prototype=False, provider="openai", model=model,
@@ -68,8 +76,12 @@ def investigate(evidence, provider):
         financial_impact={k: v for k, v in verification.items() if k not in {'classification', 'original', 'duplicate'}},
         investigation_trace=snapshot["events"], supporting_evidence=snapshot,
         recommended_action_code=action,
-        recommended_action=action.replace("_", " ").title(),
+        recommended_action=ACTION_TITLES[action],
         recommendation_reason=model_result.recommendation_reason,
         risk_consideration="Proposal only. Revalidate current evidence and obtain required human review/approval before any corrective action. No action was executed.",
         policy_review_required=True, evidence_references=evidence["evidence_references"],
+        provider_metadata=getattr(provider, 'last_metadata', {}),
+        review_flags=review_flags,
+        validation_notes=['Schema, citation existence, accounting and recommendation prerequisites checked.',
+            'Semantic citation support and causal reasoning require human evaluation.'],
         llm_analysis=model_result.model_dump())

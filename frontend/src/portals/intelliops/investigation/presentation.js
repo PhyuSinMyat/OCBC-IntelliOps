@@ -1,15 +1,23 @@
 // Presentation derived from the saved report. No new financial or cause inference.
+export const actionPresentation = {
+  CLOSE_HELD_DUPLICATE: ['Review held-duplicate closure', 'Shared instruction, one verified posting and a held repeat. Human closure review only.'],
+  ESCALATE_DUPLICATE_FINANCIAL_EXECUTION: ['Escalate duplicate financial execution for review', 'Shared instruction with two verified postings. Human review; no automatic financial correction.'],
+  REVIEW_FALSE_POSITIVE_CLOSURE: ['Review false-positive closure', 'Independently authorized separate instructions with two verified postings. Human closure review only.'],
+  ESCALATE_FOR_PAYMENT_VERIFICATION: ['Escalate for payment verification', 'Obtain additional evidence when intent or execution is uncertain. No closure or financial change.'],
+};
+
 export function resultSummary(report) {
   const same = report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST';
   const separate = report.diagnosis_classification === 'LEGITIMATE_SEPARATE_INSTRUCTIONS';
   const timeout = report.root_cause_code === 'CLIENT_RETRY_ACK_TIMEOUT';
   const idempotency = report.root_cause_code === 'IDEMPOTENCY_CONTROL_FAILURE';
   const customer = report.root_cause_code === 'CUSTOMER_DOUBLE_SUBMISSION';
-  const identified = timeout || separate || idempotency || customer;
+  const modelInference = report.prototype === false && Boolean(report.root_cause_status);
+  const identified = modelInference ? report.root_cause_status === 'MODEL_HYPOTHESIS' : timeout || separate || idempotency || customer;
   const f = report.financial_execution_assessment;
   const financial = {
     SINGLE_POSTING_CONFIRMED: ['One posting confirmed', 'Original posted; repeated request held before execution.', 'positive'],
-    DOUBLE_POSTING_CONFIRMED: [same ? 'Duplicate execution confirmed' : 'Two postings confirmed', separate ? 'Two distinct instructions with verified postings.' : 'Two distinct posted journals. Human review required.', separate ? 'neutral' : 'danger'],
+    DOUBLE_POSTING_CONFIRMED: [modelInference ? 'Two postings verified' : same ? 'Duplicate execution confirmed' : 'Two postings confirmed', separate ? 'Two distinct instructions with verified postings.' : 'Two distinct posted journals. Human review required.', separate ? 'neutral' : 'danger'],
     NO_POSTING_CONFIRMED: ['No posting confirmed', 'Both requests are recorded as held before execution.', 'neutral'],
     EXECUTION_OUTCOME_UNKNOWN: ['Execution outcome unknown', 'Missing evidence prevents full financial verification.', 'caution'],
   }[f.classification] || ['Execution outcome unknown', 'Financial verification is incomplete.', 'caution'];
@@ -17,14 +25,14 @@ export function resultSummary(report) {
   const shared = a?.businessReference && a.businessReference === b?.businessReference ? a.businessReference : null;
   return {
     identified, same, separate, timeout,
-    explanation: idempotency || customer ? report.root_cause_explanation : timeout ? 'Correlated timeout and retry events link the repeated request to the same payment instruction.' : separate ?
+    explanation: modelInference || idempotency || customer ? report.root_cause_explanation : timeout ? 'Correlated timeout and retry events link the repeated request to the same payment instruction.' : separate ?
       'Verified authorization evidence establishes separate intended instructions despite similar payment details.' : same ?
         'The requests share the same intended instruction. Available events do not establish why it was submitted again.' :
         'The available records do not establish the intended relationship or underlying cause.',
     relationship: [same ? 'Same intended instruction' : separate ? 'Different instructions' : 'Relationship unverified',
       same ? shared ? `Both requests share ${shared}.` : 'Source instruction evidence and payment attributes agree.' : separate ? 'Two separately verified payment instructions.' : 'Additional instruction evidence is needed.', same ? 'positive' : separate ? 'neutral' : 'caution'],
-    cause: [customer ? 'Customer double submission' : idempotency ? 'Idempotency control failure' : timeout ? 'Acknowledgment timeout' : separate ? 'Legitimate repeated payments' : 'Root cause unknown',
-      customer ? 'Two explicit customer submission events identify the same intended payment.' : idempotency ? 'The structured diagnosis identifies a control failure.' : timeout ? 'A correlated retry follows the timeout.' : separate ? 'Separate instructions explain the similarity.' : 'No evidence establishes the submission trigger.', identified ? 'neutral' : 'caution'],
+    cause: [modelInference ? report.root_cause_title : customer ? 'Customer double submission' : idempotency ? 'Idempotency control failure' : timeout ? 'Acknowledgment timeout' : separate ? 'Legitimate repeated payments' : 'Root cause unknown',
+      modelInference ? report.root_cause_explanation : customer ? 'Two explicit customer submission events identify the same intended payment.' : idempotency ? 'The structured diagnosis identifies a control failure.' : timeout ? 'A correlated retry follows the timeout.' : separate ? 'Separate instructions explain the similarity.' : 'No evidence establishes the submission trigger.', modelInference ? 'caution' : identified ? 'neutral' : 'caution'],
     financial,
   };
 }
@@ -80,6 +88,8 @@ export function causalEvents(report) {
     add(events.find(e => e.paymentId === s.duplicate?.id && e.eventType === 'RETRY_SUBMITTED' && e.correlationId === timeout?.correlationId && Date.parse(e.occurredAt) >= Date.parse(timeout?.occurredAt)));
   } else add(events.find(e => e.paymentId === s.duplicate?.id && e.eventType === 'PAYMENT_CREATED'));
   if (report.prototype === false) {
+    const cited = new Set(report.root_cause_evidence_refs || []);
+    events.filter(event => cited.has(`event:${event.id}`)).forEach(add);
     const types = report.root_cause_code === 'CUSTOMER_DOUBLE_SUBMISSION' ? ['CLIENT_SUBMISSION'] :
       report.root_cause_code === 'IDEMPOTENCY_CONTROL_FAILURE' ? ['ACK_TIMEOUT', 'RETRY_SUBMITTED', 'IDEMPOTENCY_CHECK_FAILED'] :
       report.root_cause_code === 'LEGITIMATE_REPEATED_PAYMENT' ? ['PAYMENT_AUTHORIZED'] : [];

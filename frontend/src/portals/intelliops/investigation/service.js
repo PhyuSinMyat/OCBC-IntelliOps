@@ -29,6 +29,28 @@ export const getRuns = key => saved.runs[key] || [];
 export const getHandoff = id => saved.handoffs[id] || null;
 const pause = () => new Promise(resolve => setTimeout(resolve, 420));
 
+export async function loadPersistedInvestigations(key, caseId, { offset = 0 } = {}) {
+  const history = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}/investigations?limit=20&offset=${offset}`);
+  const incoming = history.investigations.map(item => {
+    const report = item.report;
+    return { case_id: caseId, investigation_id: item.investigation_id || `REQUEST-${item.request_id}`,
+      request_id: item.request_id, prototype: false, durable: true,
+      run_status: report ? 'COMPLETED' : item.status === 'RUNNING' ? 'ANALYZING' : 'FAILED',
+      started_at: report?.started_at || item.created_at, completed_at: report?.completed_at,
+      evidence_snapshot_at: report?.evidence_snapshot_at,
+      stage_index: -1, report: report || undefined,
+      snapshot: report?.supporting_evidence || { events: [], journals: [], entries: [] },
+      stale: item.stale, current_evidence_availability: history.current_evidence_availability,
+      error: item.error?.detail || (item.status === 'RUNNING' ? 'An existing request is reserved. Refresh history; do not start a new paid request.' : undefined) };
+  });
+  const requestIds = new Set(incoming.map(r => r.request_id));
+  const ids = new Set(incoming.map(r => r.investigation_id));
+  saved.runs[key] = [...getRuns(key).filter(r => !requestIds.has(r.request_id) && !ids.has(r.investigation_id)), ...incoming]
+    .sort((a, b) => Date.parse(a.started_at) - Date.parse(b.started_at));
+  persist(); notify();
+  return { hasMore: incoming.length === 20, nextOffset: offset + incoming.length };
+}
+
 export async function startInvestigation({ key, caseRecord, records, accounts, fixture, failEvidence = false, mode }) {
   if (!isDuplicate(caseRecord)) throw new Error('Only Duplicate Transaction investigation is supported.');
   if (!['backend', 'prototype'].includes(mode)) throw new Error('Select an explicit backend or prototype investigation mode.');
@@ -66,7 +88,8 @@ export async function startInvestigation({ key, caseRecord, records, accounts, f
 
 async function startBackendInvestigation(key, caseRecord) {
   const now = new Date().toISOString();
-  const run = { case_id: caseRecord.id, investigation_id: `REQUEST-${crypto.randomUUID()}`,
+  const requestId = crypto.randomUUID();
+  const run = { case_id: caseRecord.id, investigation_id: `REQUEST-${requestId}`, request_id: requestId,
     run_status: 'ANALYZING', started_at: now, completed_at: null, stage_index: -1, prototype: false,
     snapshot: { original: null, duplicate: null, events: [], journals: [], entries: [], fixture: null } };
   const previous = getRuns(key);
@@ -74,12 +97,13 @@ async function startBackendInvestigation(key, caseRecord) {
   try { persist(); } catch { saved.runs[key] = previous; throw new Error('Unable to save investigation state. Enable session storage and retry.'); }
   notify();
   try {
-    const report = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseRecord.id)}/investigations`, { method: 'POST' });
+    const report = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseRecord.id)}/investigations`, { method: 'POST', requestId });
     if (report.case_id !== caseRecord.id || report.prototype !== false || report.run_status !== 'COMPLETED' || !report.llm_analysis || !report.supporting_evidence) {
       throw new Error('Backend returned an invalid AI investigation result. No prototype was substituted.');
     }
     Object.assign(run, { investigation_id: report.investigation_id, run_status: 'COMPLETED', report,
-      completed_at: report.completed_at, evidence_snapshot_at: report.evidence_snapshot_at, snapshot: report.supporting_evidence });
+      completed_at: report.completed_at, evidence_snapshot_at: report.evidence_snapshot_at, snapshot: report.supporting_evidence,
+      durable: report.persistence === 'BACKEND_DATABASE' });
     persist(); notify();
   } catch (error) {
     run.run_status = 'FAILED'; run.completed_at = new Date().toISOString(); run.error = error.message;

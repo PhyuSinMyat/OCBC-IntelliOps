@@ -47,10 +47,11 @@ export async function paymentRequest(path, body) {
   return data;
 }
 
-export async function exceptionRequest(path, { method = 'GET', body } = {}) {
+export async function exceptionRequest(path, { method = 'GET', body, requestId } = {}) {
   if (!bankingApiUrl) throw new Error('The backend API URL is not configured.');
   const response = await send(`${bankingApiUrl}${path}`, {
-    method, headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...authHeaders() },
+    method, headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...authHeaders(),
+      ...(requestId ? { 'X-Investigation-Request-ID': requestId } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const data = await responseData(response);

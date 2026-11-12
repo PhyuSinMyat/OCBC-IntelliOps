@@ -2,7 +2,23 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { developmentFixture } from './fixtures.js';
 import { analyzeSnapshot, evidenceSnapshot } from './analysis.js';
-import { causalEvents, eventContext, paymentPath, resultSummary } from './presentation.js';
+import { actionPresentation, causalEvents, eventContext, paymentPath, resultSummary } from './presentation.js';
+
+test('action labels are review proposals and distinguish held duplicates from false positives', () => {
+  assert.deepEqual(Object.keys(actionPresentation).sort(), ['CLOSE_HELD_DUPLICATE', 'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION', 'ESCALATE_FOR_PAYMENT_VERIFICATION', 'REVIEW_FALSE_POSITIVE_CLOSURE'].sort());
+  assert.equal(actionPresentation.CLOSE_HELD_DUPLICATE[0], 'Review held-duplicate closure');
+  assert.match(actionPresentation.CLOSE_HELD_DUPLICATE[1], /held repeat/);
+  assert.match(actionPresentation.REVIEW_FALSE_POSITIVE_CLOSURE[1], /Independently authorized separate instructions/);
+  assert.match(actionPresentation.ESCALATE_FOR_PAYMENT_VERIFICATION[1], /No closure or financial change/);
+});
+
+test('backend financial summary does not turn two journals into an erroneous duplicate diagnosis', () => {
+  const report = analyzeSnapshot(snapshot('legitimate'));
+  const summary = resultSummary({ ...report, prototype: false, root_cause_status: 'MODEL_HYPOTHESIS' });
+  assert.equal(summary.financial[0], 'Two postings verified');
+  assert.equal(summary.financial[2], 'neutral');
+  assert.equal(summary.separate, true);
+});
 
 function snapshot(name = 'prevented') {
   const f = developmentFixture(name);

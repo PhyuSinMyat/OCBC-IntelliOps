@@ -74,3 +74,12 @@ snapshot scope. Required report fields are defined by the object returned from
 history, persistence, retry, interrupted runs, handoff and mobile layout.
 Use the existing `INTELLIOPS_BROWSER_PATH` setting when running Playwright against
 an installed browser rather than Playwright's bundled Chromium.
+
+## Durable-history integration
+
+The backend store and the accepted A/B/C reports are deployed in development.
+The earlier session-only roadmap above describes the legacy/prototype adapter.
+See the [teammate handoff](../../../../../docs/AI_INVESTIGATION_HANDOFF.md) for
+current GET-based history, snapshot staleness, environment setup, offline tests
+and opt-in browser verification. Do not rerun the deployed SQL. Refresh/history
+reads do not start a model call; Resolution handoff remains a proposal only.

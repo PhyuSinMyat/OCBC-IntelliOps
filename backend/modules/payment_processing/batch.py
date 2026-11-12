@@ -4,7 +4,7 @@ from sqlalchemy import select
 from modules.core_banking.models import Account
 from modules.core_banking.service import account_query
 from modules.intelliops.models import AuditEvent
-from .models import ExceptionBatch, ExceptionBatchItem
+from .models import ExceptionBatch, ExceptionBatchItem, PaymentInstruction, Transaction
 from .schemas import PaymentRequest
 from .service import PaymentError, create_payment, simulation_now
 
@@ -35,13 +35,18 @@ def create_exception_batch(db, request, role):
                                      amount=amount, currency=sender.currency,
                                      idempotency_key=f"batch-{batch.batch_id}-{sequence:03d}")
             tx, _ = create_payment(db, payment, role, scenario, now + timedelta(microseconds=sequence))
+            extension = db.scalar(select(PaymentInstruction).where(PaymentInstruction.transaction_id == tx.id))
+            if extension.original_payment_id:
+                original = db.get(PaymentInstruction, extension.original_payment_id)
+                db.add(ExceptionBatchItem(batch_id=batch.batch_id, transaction_id=original.transaction_id, scenario_code=scenario, sequence=sequence))
+                transactions.append(db.get(Transaction, original.transaction_id))
             db.add(ExceptionBatchItem(batch_id=batch.batch_id, transaction_id=tx.id,
                                       scenario_code=scenario, sequence=sequence))
             transactions.append(tx)
             sequence += 1
     batch.status, batch.completed_at = "COMPLETED", now + timedelta(microseconds=sequence)
     db.add(AuditEvent(action="EXCEPTION_BATCH_GENERATED", actor=role, reference=f"BATCH-{batch.batch_id}",
-                      details={"exceptionTypes": scenarios, "countPerType": request.count_per_type,
+                      details={"countPerType": request.count_per_type,
                                "transactionReferences": [tx.reference for tx in transactions]}, created_at=now))
     db.flush()
     return batch, transactions

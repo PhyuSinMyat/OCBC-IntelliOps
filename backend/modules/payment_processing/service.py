@@ -5,7 +5,7 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from uuid import uuid4
 from sqlalchemy import select, or_
-from .models import Transaction, ProcessingEvent, PaymentInstruction
+from .models import Transaction, ProcessingEvent, PaymentInstruction, PaymentRequestHistory, ExceptionBatchItem
 from modules.core_banking.models import Account, Customer, LedgerJournal, LedgerEntry
 from modules.core_banking.service import account_balance, post_normal_journal
 from modules.intelliops.models import AuditEvent
@@ -15,6 +15,14 @@ class PaymentError(ValueError):
     def __init__(self, message, status=422):
         super().__init__(message)
         self.status = status
+
+
+def operational_audit_details(details):
+    allowed = {'source', 'paymentReferences', 'transactionReferences', 'countPerType', 'createdCases',
+        'transactionReference', 'originalReference', 'observedAt', 'ruleCode', 'ruleVersion', 'ruleConfiguration',
+        'evidenceFingerprint', 'financialAssessment', 'classification', 'rootCause', 'note', 'summary',
+        'journalReference', 'amount', 'currency', 'ledgerEffect', 'financialChangesRolledBack'}
+    return {key: value for key, value in (details or {}).items() if key in allowed}
 
 
 def simulation_now():
@@ -31,17 +39,41 @@ def aware(value):
 
 
 def fingerprint(request, scenario):
-    payload = request.model_dump(exclude={"idempotency_key", "scenario_code"}, mode="json")
+    payload = request.model_dump(exclude={"idempotency_key", "scenario_code", "duplicate_scenario", "run_key"}, mode="json")
     payload["amount"] = str(request.amount.quantize(Decimal("0.01")))
     payload["scenario_code"] = scenario
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
 
 
-def event(db, tx, kind, status, message, now, code=None):
-    db.add(ProcessingEvent(transaction_id=tx.id, event_type=kind, status=status, details=message, error_code=code, created_at=now))
+def event(db, tx, kind, status, message, now, code=None, request_id=None):
+    if request_id is None:
+        request_id = db.scalar(select(PaymentRequestHistory.request_id).join(PaymentInstruction,
+            PaymentInstruction.payment_id == PaymentRequestHistory.payment_id).where(PaymentInstruction.transaction_id == tx.id)
+            .order_by(PaymentRequestHistory.received_at.desc()))
+    db.add(ProcessingEvent(transaction_id=tx.id, request_id=request_id, event_type=kind, status=status,
+                           details=json.dumps(message, sort_keys=True) if isinstance(message, dict) else message,
+                           error_code=code, created_at=now))
 
 
-def create_payment(db, request, role, scenario="NORMAL", now=None):
+def record_request(db, instruction, key, now, *, anchor=None, origin='CUSTOMER', retry=None, authorization=None, correlation=None):
+    anchor = anchor or instruction
+    if anchor.original_payment_id is not None:
+        raise PaymentError('Business instruction anchor is not canonical.')
+    source, target = db.get(Transaction, anchor.transaction_id), db.get(Transaction, instruction.transaction_id)
+    if (anchor.sender_account_id, anchor.receiver_account_id, source.amount, source.currency) != (
+            instruction.sender_account_id, instruction.receiver_account_id, target.amount, target.currency):
+        raise PaymentError('Request conflicts with its business instruction.')
+    if retry and (origin != 'SYSTEM' or retry.business_instruction_id != anchor.payment_id):
+        raise PaymentError('Retry must reference the same instruction.')
+    row = PaymentRequestHistory(business_instruction_id=anchor.payment_id, payment_id=instruction.payment_id,
+        origin=origin, retry_of_request_id=retry.request_id if retry else None, submitted_idempotency_key=key,
+        authorization_id=authorization, correlation_id=correlation, received_at=now)
+    db.add(row)
+    db.flush()
+    return row
+
+
+def create_payment(db, request, role, scenario="NORMAL", now=None, *, _on_accepted=None):
     if scenario != "NORMAL" and role != "ADMIN":
         raise PaymentError("Only ADMIN may inject exception scenarios.", 403)
     now = now or simulation_now()
@@ -50,6 +82,11 @@ def create_payment(db, request, role, scenario="NORMAL", now=None):
         existing = db.scalar(select(PaymentInstruction).where(PaymentInstruction.idempotency_key == request.idempotency_key))
         if existing and existing.request_fingerprint != signature:
             raise PaymentError("Idempotency key already used with different payment details.", 409)
+        if existing:
+            prior = db.scalar(select(PaymentRequestHistory).where(PaymentRequestHistory.payment_id == existing.payment_id).order_by(PaymentRequestHistory.received_at))
+            anchor = db.get(PaymentInstruction, prior.business_instruction_id) if prior else existing
+            if anchor.original_payment_id is None:
+                record_request(db, existing, request.idempotency_key, now, anchor=anchor)
         return existing
     if existing := replay():
         return db.get(Transaction, existing.transaction_id), True
@@ -86,6 +123,10 @@ def create_payment(db, request, role, scenario="NORMAL", now=None):
             reconciliation_due_at=now + timedelta(seconds=reconciliation_seconds()))
         db.add(instruction)
         db.flush()
+        if _on_accepted:
+            _on_accepted(tx, instruction)
+        else:
+            record_request(db, instruction, key, now, anchor=original[1] if original else None)
         event(db, tx, "PAYMENT_CREATED", "PENDING", "Synthetic instruction accepted.", now)
         event(db, tx, "VALIDATION_STARTED", "PROCESSING", "Validating accounts, currency and available funds.", now)
         event(db, tx, "VALIDATION_PASSED", "PROCESSING", "Account validation passed.", now)
@@ -127,8 +168,8 @@ def create_payment(db, request, role, scenario="NORMAL", now=None):
         result = process("DUPLICATE", request.idempotency_key, original)
     else:
         result = process(scenario, request.idempotency_key)
-    db.add(AuditEvent(action="PAYMENT_CREATED" if scenario == "NORMAL" else "SCENARIO_INJECTED", actor=role,
-                     reference=result[0].reference, details={"scenario": scenario, "idempotency_key": request.idempotency_key}, created_at=now))
+    db.add(AuditEvent(action="PAYMENT_CREATED", actor=role, reference=result[0].reference,
+                     details={"source": "payment_processor"}, created_at=now))
     db.flush()
     return result[0], False
 
@@ -137,7 +178,7 @@ def payment_rows(db):
     return db.execute(select(Transaction, PaymentInstruction).outerjoin(PaymentInstruction, PaymentInstruction.transaction_id == Transaction.id)).all()
 
 
-def payment_dtos(db, rows=None):
+def payment_dtos(db, rows=None, schema=None):
     # Constant query count: all parties are loaded in one join, never per payment.
     journals = {j.source_transaction_id: j.journal_ref for j in db.scalars(
         select(LedgerJournal).where(LedgerJournal.normal_transaction_id.is_not(None)))}
@@ -145,6 +186,19 @@ def payment_dtos(db, rows=None):
                                 customerType=c.customer_type, accountType=a.account_type)
                for a, c in db.execute(select(Account, Customer).join(Customer, Customer.customer_id == Account.customer_id))}
     result = []
+    from shared.schema import capabilities
+    schema = schema or capabilities(db)
+    requests = db.scalars(select(PaymentRequestHistory).order_by(PaymentRequestHistory.received_at, PaymentRequestHistory.request_id)).all() if schema['requests'] else []
+    refs = dict(db.execute(select(PaymentInstruction.payment_id, Transaction.reference).join(Transaction, Transaction.id == PaymentInstruction.transaction_id)).all())
+    receipts, groups = {}, {}
+    for r in requests:
+        receipts.setdefault(r.payment_id, []).append(r)
+        groups.setdefault(r.business_instruction_id, set()).add(r.payment_id)
+    batch_items = db.execute(select(ExceptionBatchItem.batch_id, ExceptionBatchItem.transaction_id, Transaction.reference).join(Transaction, Transaction.id == ExceptionBatchItem.transaction_id)).all()
+    batches, membership = {}, {}
+    for batch, tx_id, ref in batch_items:
+        batches.setdefault(batch, set()).add(ref)
+        membership[tx_id] = batch
     for tx, instruction in rows if rows is not None else payment_rows(db):
         sender = parties.get(instruction.sender_account_id) if instruction else None
         receiver = parties.get(instruction.receiver_account_id) if instruction else None
@@ -153,7 +207,15 @@ def payment_dtos(db, rows=None):
             sender=sender, receiver=receiver, amountCents=int(tx.amount*100), currency=tx.currency,
             status=tx.status.title(), createdAt=aware(tx.created_at), completedAt=aware(instruction.completed_at) if instruction else None,
             failureCode=instruction.failure_code if instruction else None, failureDescription=instruction.failure_description if instruction else None,
-            scenarioCode=instruction.scenario_code if instruction else None, reconciliationDueAt=aware(instruction.reconciliation_due_at) if instruction else None,
+            requests=[dict(requestId=str(r.request_id), instructionReference=str(r.business_instruction_id), origin=r.origin,
+                retryOfRequestId=str(r.retry_of_request_id) if r.retry_of_request_id else None,
+                authorizationId=str(r.authorization_id) if r.authorization_id else None,
+                correlationId=str(r.correlation_id) if r.correlation_id else None, receivedAt=aware(r.received_at))
+                for r in receipts.get(instruction.payment_id, [])] if instruction else [],
+            relatedPaymentReferences=sorted((batches.get(membership.get(tx.id), set()) | {
+                refs[p] for r in receipts.get(instruction.payment_id, []) for p in groups[r.business_instruction_id]
+            } if instruction else set()) - {tx.reference}),
+            reconciliationDueAt=aware(instruction.reconciliation_due_at) if instruction else None,
             originalPaymentId=str(instruction.original_payment_id) if instruction and instruction.original_payment_id else None))
     return result
 

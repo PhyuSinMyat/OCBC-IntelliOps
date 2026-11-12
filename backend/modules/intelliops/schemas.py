@@ -29,6 +29,7 @@ class CaseActionOut(BaseModel):
 class CaseDetailOut(BaseModel):
     id: str
     transactionId: str
+    relatedTransactionId: str | None = None
     exceptionType: str
     severity: str
     status: str

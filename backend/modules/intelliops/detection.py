@@ -4,7 +4,8 @@ import json
 from collections import defaultdict
 from datetime import timedelta
 from decimal import Decimal
-from sqlalchemy import select, text
+from sqlalchemy import select, text, or_
+from sqlalchemy.orm import defer
 from sqlalchemy.exc import IntegrityError
 from modules.payment_processing.models import Transaction, PaymentInstruction, ProcessingEvent
 from modules.payment_processing.service import simulation_now, aware, reconciliation_seconds
@@ -128,7 +129,7 @@ def evaluate(tx, instruction, data, policies, now):
                 "originalBusinessReference": original.payment_reference,
                 "originalPaymentId": str(oi.payment_id) if oi else None,
                 "duplicatePaymentId": str(instruction.payment_id) if instruction else None,
-                "classification": "CONFIRMED_DUPLICATE_REQUEST" if matching and (direct or blocked) and original.status == "COMPLETED" else "SUSPECTED_DUPLICATE",
+                "classification": "SUSPECTED_DUPLICATE",
                 "originalCompleted": original.status == "COMPLETED", "originalInstructionLinked": direct,
                 "attributesMatch": matching, "duplicateBlocked": blocked,
                 "idempotencyKeysMatch": bool(instruction and oi and instruction.idempotency_key == oi.idempotency_key),
@@ -178,11 +179,13 @@ def detect(db, role, now=None):
     history = defaultdict(list)
     for case in db.scalars(select(ExceptionCase).order_by(ExceptionCase.id)):
         history[(case.transaction_id, case.exception_type)].append(case)
-    observations = {(o.transaction_id, o.rule_id): o for o in db.scalars(select(DetectionObservation))}
+    observations = {(o.transaction_id, o.rule_id): o for o in db.scalars(select(DetectionObservation).where(DetectionObservation.related_transaction_id.is_(None)))}
     created = []
     for tx, instruction in rows:
         findings = evaluate(tx, instruction, data, policies, now)
         for code, (rule, config) in policies.items():
+            if code == 'DUPLICATE_TRANSACTION':
+                continue  # Pair observations are handled separately below.
             if not rule.enabled:
                 continue
             if code in LEDGER_RULES and (tx.status != "COMPLETED" or now < due_at(tx, instruction, config)):
@@ -219,6 +222,7 @@ def detect(db, role, now=None):
             db.add(ExceptionCaseAction(exception_id=case.id, action_type="DETECTED", actor=role, details=details, created_at=now))
             db.add(AuditEvent(action="EXCEPTION_DETECTED", actor=role, reference=f"CASE-{case.id:06d}", details=details, created_at=now))
             created.append(case.id)
+    created.extend(detect_pairs(db, rows, data, policies['DUPLICATE_TRANSACTION'], role, now))
     db.add(AuditEvent(action="DETECTION_RUN", actor=role, reference="DETECTION", details={"createdCases": created}, created_at=now))
     db.flush()
     return created
@@ -239,11 +243,91 @@ def insert_case(db, case):
     return True
 
 
-def case_dtos(db, transaction_id=None):
+def case_dtos(db, transaction_id=None, schema=None):
+    from shared.schema import capabilities
+    schema = schema or capabilities(db)
     query = select(ExceptionCase, Transaction.reference).join(Transaction, Transaction.id == ExceptionCase.transaction_id)
+    if not schema['cases']:
+        query = query.options(defer(ExceptionCase.related_transaction_id))
     if transaction_id is not None:
-        query = query.where(ExceptionCase.transaction_id == transaction_id)
+        query = query.where(or_(ExceptionCase.transaction_id == transaction_id, ExceptionCase.related_transaction_id == transaction_id)
+                            if schema['cases'] else ExceptionCase.transaction_id == transaction_id)
+    refs = dict(db.execute(select(Transaction.id, Transaction.reference)).all())
     return [dict(id=f"CASE-{c.id:06d}", transactionId=reference, exceptionType=c.exception_type,
+                 relatedTransactionId=refs.get(c.related_transaction_id if schema['cases'] else None) or (c.evidence or {}).get('originalReference'),
                  severity=c.severity, status=c.status, evidence=c.evidence or {}, createdAt=aware(c.created_at),
                  updatedAt=aware(c.updated_at), resolvedAt=aware(c.resolved_at), resolutionSummary=c.resolution_summary)
             for c, reference in db.execute(query.order_by(ExceptionCase.id.desc()))]
+
+
+def pair_finding(a, ai, b, bi, data, config):
+    matching = bool(ai and bi and ai.sender_account_id == bi.sender_account_id and ai.receiver_account_id == bi.receiver_account_id
+                    and a.amount == b.amount and a.currency == b.currency)
+    direct = bool(ai and bi and (bi.original_payment_id == ai.payment_id or ai.original_payment_id == bi.payment_id))
+    elapsed = abs((aware(b.created_at) - aware(a.created_at)).total_seconds())
+    shared = a.payment_reference == b.payment_reference
+    similar = matching and a.status == b.status == 'COMPLETED' and elapsed <= config['similarity_window_seconds']
+    if not (direct or shared or similar) or b.status == 'REJECTED' and not data['journals_by_tx'][b.id] and not data['legacy'][b.id]:
+        return None
+    op, oc = posting_assessment(a, ai, data)
+    dp, dc = posting_assessment(b, bi, data)
+    events = data['events'][b.id]
+    blocked = any(e.event_type == 'DUPLICATE_BLOCKED' for e in events)
+    outcome = 'EXECUTION_OUTCOME_UNKNOWN'
+    if oc and dc and len(op) == len(dp) == 1 and op != dp:
+        outcome = 'TWO_POSTINGS_CONFIRMED'
+    elif (oc and len(op) == 1 and not data['journals_by_tx'][b.id] and not data['legacy'][b.id]
+          and b.status in {'PENDING', 'HELD'} and blocked
+          and not any(e.event_type in {'PROCESSING_STARTED', 'LEDGER_POSTED', 'PROCESSING_COMPLETED'} for e in events)):
+        outcome = 'SINGLE_POSTING_CONFIRMED_DUPLICATE_HELD'
+    return dict(originalReference=a.reference, transactionReference=b.reference, businessReference=b.payment_reference,
+        originalBusinessReference=a.payment_reference, originalPaymentId=str(ai.payment_id) if ai else None,
+        duplicatePaymentId=str(bi.payment_id) if bi else None, originalCompleted=a.status == 'COMPLETED',
+        originalInstructionLinked=direct, attributesMatch=matching, timeDifferenceSeconds=elapsed, sharedReference=shared,
+        duplicateBlocked=blocked, classification='SUSPECTED_DUPLICATE', rootCause='NOT_ESTABLISHED',
+        idempotencyKeysMatch=bool(ai and bi and ai.idempotency_key == bi.idempotency_key),
+        originalJournalReferences=op, duplicateJournalReferences=dp, financialAssessment=outcome,
+        processingEventIds=[e.id for e in events], originalProcessingEventIds=[e.id for e in data['events'][a.id]])
+
+
+def detect_pairs(db, rows, data, policy, role, now):
+    rule, config = policy
+    if not rule.enabled:
+        return []
+    rows = sorted(rows, key=lambda row: row[0].id)
+    cases = db.scalars(select(ExceptionCase).where(ExceptionCase.exception_type == rule.exception_type).order_by(ExceptionCase.id)).all()
+    cursors = {(o.transaction_id, o.related_transaction_id): o for o in db.scalars(select(DetectionObservation).where(
+        DetectionObservation.rule_id == rule.id, DetectionObservation.related_transaction_id.is_not(None)))}
+    policy_hash, created = fingerprint({'version': rule.version, 'configuration': config}), []
+    for index, (a, ai) in enumerate(rows):
+        for b, bi in rows[index + 1:]:
+            evidence = pair_finding(a, ai, b, bi, data, config)
+            prior = [c for c in cases if c.transaction_id == b.id and (c.related_transaction_id == a.id or
+                c.related_transaction_id is None and ((c.evidence or {}).get('originalReference') == a.reference or
+                    ai and bi and bi.original_payment_id == ai.payment_id))]
+            cursor = cursors.get((b.id, a.id))
+            if evidence is None and not prior and cursor is None:
+                continue
+            recovered = bool(cursor and not cursor.defective and cursor.policy_fingerprint == policy_hash)
+            if cursor is None:
+                cursor = DetectionObservation(transaction_id=b.id, related_transaction_id=a.id, rule_id=rule.id,
+                    defective=bool(evidence), policy_fingerprint=policy_hash, observed_at=now)
+                db.add(cursor)
+                cursors[(b.id, a.id)] = cursor
+            cursor.defective, cursor.observed_at, cursor.policy_fingerprint = bool(evidence), now, policy_hash
+            cursor.fingerprint = fingerprint(evidence) if evidence else None
+            if evidence is None or any(c.status not in TERMINAL for c in prior) or prior and not recovered:
+                continue
+            details = {**evidence, 'observedAt': now.isoformat(), 'ruleCode': rule.code, 'ruleVersion': rule.version,
+                       'ruleConfiguration': config, 'evidenceFingerprint': cursor.fingerprint}
+            if prior:
+                details['recurrenceOf'] = f'CASE-{prior[-1].id:06d}'
+            case = ExceptionCase(transaction_id=b.id, related_transaction_id=a.id, rule_id=rule.id,
+                exception_type=rule.exception_type, severity=rule.severity, status='OPEN',
+                detection_key=f'DUPLICATE_TRANSACTION:{a.id}:{b.id}', evidence=details, created_at=now, updated_at=now)
+            if insert_case(db, case):
+                cases.append(case)
+                created.append(case.id)
+                db.add(ExceptionCaseAction(exception_id=case.id, action_type='DETECTED', actor=role, details=details, created_at=now))
+                db.add(AuditEvent(action='EXCEPTION_DETECTED', actor=role, reference=f'CASE-{case.id:06d}', details=details, created_at=now))
+    return created

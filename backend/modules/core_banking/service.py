@@ -82,6 +82,8 @@ def account_query():
 
 def post_normal_journal(db, journal, transaction, sender, receiver, now):
     """Validate persisted movements before the atomic payment can complete."""
+    if transaction.status == 'HELD':
+        raise ValueError('Held payments cannot post money.')
     if journal.status != "Draft" or journal.posted_at is not None:
         raise ValueError("Journal is not an unposted Draft.")
     if (journal.source_transaction_id != transaction.id or journal.normal_transaction_id != transaction.id

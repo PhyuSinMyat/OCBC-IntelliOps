@@ -22,6 +22,7 @@ export default function TransactionsPage() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [generated, setGenerated] = useState(null);
   useEffect(() => { try { sessionStorage.setItem('payment-filters-v2', JSON.stringify(filters)); } catch {} }, [filters]);
   const change = (key, value) => { setFilters(previous => ({ ...previous, [key]: value })); setPage(1); };
   const reset = () => { setFilters({ ...paymentFilters }); setPage(1); };
@@ -43,10 +44,16 @@ export default function TransactionsPage() {
     <div className="account-demo"><ShieldCheck size={15}/><span>{backendConnected ? `Connected synthetic database · Authenticated ${role} · Financial operations validated by the backend.` : 'Browser-only simulation · Records persist locally, not to PostgreSQL.'}</span></div>
     <section className="account-metrics" aria-label="Payment summary">{[
       ['Total Transactions', records.payment_transactions.length, 'All processing statuses'],
-      ...['Completed', 'Processing', 'Failed'].map(status => [status, records.payment_transactions.filter(p => p.status === status).length, `${status} payment instructions`]),
+      ...['Completed', 'Processing', 'Failed', 'Held'].map(status => [status, records.payment_transactions.filter(p => p.status === status).length, `${status} payment instructions`]),
     ].map(([label, count, text]) => <div className="account-metric" key={label}><span>{label}</span><strong>{count}</strong><small>{text}</small></div>)}</section>
     <div className="payment-simulation-controls">{!backendConnected && <label>Local demo role <select aria-label="Local demo role" value={role} onChange={e => { setDemoRole(e.target.value); sessionStorage.setItem('payment-demo-role', e.target.value); }}><option>ANALYST</option><option>ADMIN</option></select></label>}<button className="account-link" disabled={busy} onClick={detect}>{busy ? 'Running detection…' : 'Run Detection'}</button>{!backendConnected && role === 'ADMIN' && <button className="account-link" onClick={() => { advanceSimulationClock(role); setMessage('Local simulation clock advanced by 61 seconds. Run Detection to evaluate the cutoff.'); }}>Advance Local Clock +61s</button>}<small>Simulation time: {timestamp(records.simulationNow || getSimulationNow())}</small></div>
     {message && <p className="payment-feedback" role="status">{message}</p>}{error && <p role="alert" className="movement-out">{error}</p>}
+    {records.schemaReady === false && <p className="payment-feedback" role="status">Existing database records remain available. Database-backed generation and detection require the pending scenario migration.</p>}
+    {generated && <section className="accounts-panel" aria-label="Generated payment results"><h2>Generated payments</h2>
+      <p>{generated.attemptCount} attempts · {generated.postingCount} confirmed postings{!backendConnected && ' · Browser-only records'}</p>
+      {generated.payments.map(p => <p key={p.id}><button className="account-link" onClick={() => open(p.id)}>{p.id}</button> · <StatusBadge status={p.status}/>
+        {p.journalReference && <> · <a className="account-link" href={'/core-banking/journals?journal=' + encodeURIComponent(p.journalReference)}>{p.journalReference}</a></>}</p>)}
+      <button className="simulation-button" disabled={busy} onClick={detect}>Run Detection</button></section>}
     <section className="accounts-panel" aria-labelledby="transaction-register-title"><div className="account-register-heading"><div><h2 id="transaction-register-title">Transaction register</h2><p>Search payments and inspect their processing history.</p></div><span className="record-count">{matching.length} transactions</span></div>
       <div className="account-filters enhanced-filters">
         <label className="account-search"><Search size={17}/><input aria-label="Search transactions" placeholder="Search transaction, customer or account…" value={filters.search} onChange={e => change('search', e.target.value)}/></label>
@@ -63,7 +70,7 @@ export default function TransactionsPage() {
       <div className="account-table-footer" aria-live="polite"><span>Showing {matching.length ? (currentPage-1)*pageSize+1 : 0}–{Math.min(currentPage*pageSize, matching.length)} of {matching.length} matching transactions</span><nav className="payment-pagination" aria-label="Transaction pages"><button disabled={currentPage === 1} onClick={() => setPage(currentPage-1)}>Previous</button><span>Page {currentPage} of {pages}</span><button disabled={currentPage === pages} onClick={() => setPage(currentPage+1)}>Next</button></nav></div>
     </section>
     <TransactionDetailsDrawer key={params.get('transaction') || 'closed'} id={params.get('transaction')} onClose={close}/>
-    {creating && <CreatePaymentForm open role={role} onClose={() => setCreating(false)} onCreated={p => { setCreating(false); setMessage(`${p.id} saved as ${p.status}.`); open(p.id); }}/>}
+    {creating && <CreatePaymentForm open role={role} onClose={() => setCreating(false)} onCreated={p => { setCreating(false); setGenerated(p.payments ? p : null); setMessage(`${p.id} saved as ${p.status}.`); if (!p.payments) open(p.id); }}/>}
     {creatingBatch && <CreateExceptionBatchForm open
       onClose={() => setCreatingBatch(false)}
       onCreated={batch => {

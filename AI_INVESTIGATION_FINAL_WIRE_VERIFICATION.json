@@ -1,0 +1,450 @@
+{
+  "passed": true,
+  "focusedTests": 44,
+  "sourceTablesUnchanged": true,
+  "schemaRevision": "20261111_08",
+  "sourceTableFingerprints": {
+    "accounts": {
+      "count": 10,
+      "sha256": "5eaae538d94e70f0f261d4251deeb53e5cfda5d9f438f286d799454f39afa2d4"
+    },
+    "customers": {
+      "count": 9,
+      "sha256": "8458081a5c788894746a84c4e4ba547b990ff4ee4df81339453097bc80a9bcbf"
+    },
+    "transactions": {
+      "count": 18,
+      "sha256": "3232a2847d60f0cd8b38acfc559d008abe1657c2f03826cd3df71cffe93b7d7f"
+    },
+    "payment_instructions": {
+      "count": 18,
+      "sha256": "a65f83bc26b1561f2bac0c47623ce799e1649178adc74a88c353d0ae3ba8d173"
+    },
+    "payment_requests": {
+      "count": 10,
+      "sha256": "e0a7d598b0560b93e5bbbcad26aecf05f68a5bc037357f117ea9b6b06011ff7a"
+    },
+    "processing_events": {
+      "count": 123,
+      "sha256": "213e7ef765cfb008508d67a620cd4903308ff30cdb12eb767ccd51dc3c939be1"
+    },
+    "ledger_journals": {
+      "count": 12,
+      "sha256": "75338547734439cdba0600453981cd8b4ecff01a6d50ba2e288139726237e5c2"
+    },
+    "ledger_entries": {
+      "count": 24,
+      "sha256": "0ddb2b30454f951564ba7805355457cf70fcaa1c8fc900f725972f402204474a"
+    },
+    "ledger_records": {
+      "count": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "exceptions": {
+      "count": 11,
+      "sha256": "73fa00bc57a9bbfe508990e4bb7e956417ec98069427d35cdf6236ccfd29bffe"
+    },
+    "exception_case_actions": {
+      "count": 11,
+      "sha256": "d779b38835d6fc3f34e4cdf1370caeab9b0c23a89e9a5e9131a26596c7b5e1bd"
+    },
+    "audit_events": {
+      "count": 30,
+      "sha256": "63a884f5dde5c47e5a36308696c2758bb3c30d389c3e8ee14723c00c3293d9da"
+    },
+    "exception_batches": {
+      "count": 7,
+      "sha256": "ebbf365811e3a098808d8b08222fe2d62cccd7c8a208d5278a8ac060368bd703"
+    },
+    "exception_batch_items": {
+      "count": 15,
+      "sha256": "16ab5b03d0d95217ec31b178b90912b1c0c4d80917eb9c2eb09c15d2c6994707"
+    }
+  },
+  "cases": [
+    {
+      "caseId": "CASE-000010",
+      "passed": true,
+      "mockedWireRequests": 2,
+      "inputKeys": [
+        "snapshot",
+        "financial_verification",
+        "evidence_references",
+        "retrieved_at"
+      ],
+      "excludedFields": [
+        "audit_events",
+        "audit_metadata",
+        "diagnosis_classification",
+        "excessPostingAmount",
+        "expectedMovementForOneTransfer",
+        "expected_root_cause",
+        "hidden_answers",
+        "private_metadata",
+        "recommended_action_code",
+        "required_cause_references",
+        "root_cause_code",
+        "scenario",
+        "scenario_code",
+        "verified_assessment"
+      ],
+      "nestedPoisonInputIdentical": true,
+      "journals": 1,
+      "entries": 2,
+      "financialVerification": {
+        "classification": "SINGLE_POSTING_CONFIRMED",
+        "original": {
+          "payment_ref": "TXN-D9269292EE384041",
+          "execution": "Posted",
+          "journals": [
+            "JRN-D9269292EE384041"
+          ],
+          "valid_journals": [
+            "JRN-D9269292EE384041"
+          ],
+          "payment_status": "COMPLETED",
+          "processing_state": "COMPLETED_POSTED",
+          "reason": "Payment-aligned ledger entries verified."
+        },
+        "duplicate": {
+          "payment_ref": "TXN-1537E760E477467B",
+          "execution": "Not Started",
+          "journals": [],
+          "valid_journals": [],
+          "payment_status": "HELD",
+          "processing_state": "HELD_BEFORE_EXECUTION",
+          "reason": "Source hold/rejection precedes execution in this snapshot."
+        },
+        "completedPaymentCount": 1,
+        "confirmedPostedJournalCount": 1,
+        "validDebitTotals": {
+          "SGD": "25.00"
+        },
+        "validCreditTotals": {
+          "SGD": "25.00"
+        },
+        "accountMovements": [
+          {
+            "accountReference": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD",
+            "debit": "0.00",
+            "credit": "25.00",
+            "net": "25.00"
+          },
+          {
+            "accountReference": "VERIFY-AUTH-SENDER",
+            "currency": "SGD",
+            "debit": "25.00",
+            "credit": "0.00",
+            "net": "-25.00"
+          }
+        ],
+        "senderFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-SENDER",
+          "currency": "SGD",
+          "debit": "25.00",
+          "credit": "0.00",
+          "net": "-25.00"
+        },
+        "receiverFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-RECEIVER",
+          "currency": "SGD",
+          "debit": "0.00",
+          "credit": "25.00",
+          "net": "25.00"
+        },
+        "journalValidation": [
+          {
+            "journalReference": "JRN-D9269292EE384041",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "25.00",
+            "creditTotal": "25.00",
+            "reasons": []
+          }
+        ],
+        "requestHistoryComplete": true
+      },
+      "citationCounts": {
+        "event": 14,
+        "payment": 2,
+        "request": 2,
+        "journal": 1
+      },
+      "requestOrigins": [
+        "CUSTOMER",
+        "CUSTOMER"
+      ],
+      "requestOutcomes": "NOT_RECORDED",
+      "inputSha256": "f852424deefddd7767289e31007310d89c9583da82cf0a143616a450cad405aa",
+      "mockReportClassification": "SUSPECTED_DUPLICATE"
+    },
+    {
+      "caseId": "CASE-000011",
+      "passed": true,
+      "mockedWireRequests": 2,
+      "inputKeys": [
+        "snapshot",
+        "financial_verification",
+        "evidence_references",
+        "retrieved_at"
+      ],
+      "excludedFields": [
+        "audit_events",
+        "audit_metadata",
+        "diagnosis_classification",
+        "excessPostingAmount",
+        "expectedMovementForOneTransfer",
+        "expected_root_cause",
+        "hidden_answers",
+        "private_metadata",
+        "recommended_action_code",
+        "required_cause_references",
+        "root_cause_code",
+        "scenario",
+        "scenario_code",
+        "verified_assessment"
+      ],
+      "nestedPoisonInputIdentical": true,
+      "journals": 2,
+      "entries": 4,
+      "financialVerification": {
+        "classification": "DOUBLE_POSTING_CONFIRMED",
+        "original": {
+          "payment_ref": "TXN-276B983C2AC04A0B",
+          "execution": "Posted",
+          "journals": [
+            "JRN-276B983C2AC04A0B"
+          ],
+          "valid_journals": [
+            "JRN-276B983C2AC04A0B"
+          ],
+          "payment_status": "COMPLETED",
+          "processing_state": "COMPLETED_POSTED",
+          "reason": "Payment-aligned ledger entries verified."
+        },
+        "duplicate": {
+          "payment_ref": "TXN-FF94768778E34A1A",
+          "execution": "Posted",
+          "journals": [
+            "JRN-FF94768778E34A1A"
+          ],
+          "valid_journals": [
+            "JRN-FF94768778E34A1A"
+          ],
+          "payment_status": "COMPLETED",
+          "processing_state": "COMPLETED_POSTED",
+          "reason": "Payment-aligned ledger entries verified."
+        },
+        "completedPaymentCount": 2,
+        "confirmedPostedJournalCount": 2,
+        "validDebitTotals": {
+          "SGD": "20.00"
+        },
+        "validCreditTotals": {
+          "SGD": "20.00"
+        },
+        "accountMovements": [
+          {
+            "accountReference": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD",
+            "debit": "0.00",
+            "credit": "20.00",
+            "net": "20.00"
+          },
+          {
+            "accountReference": "VERIFY-AUTH-SENDER",
+            "currency": "SGD",
+            "debit": "20.00",
+            "credit": "0.00",
+            "net": "-20.00"
+          }
+        ],
+        "senderFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-SENDER",
+          "currency": "SGD",
+          "debit": "20.00",
+          "credit": "0.00",
+          "net": "-20.00"
+        },
+        "receiverFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-RECEIVER",
+          "currency": "SGD",
+          "debit": "0.00",
+          "credit": "20.00",
+          "net": "20.00"
+        },
+        "journalValidation": [
+          {
+            "journalReference": "JRN-276B983C2AC04A0B",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "10.00",
+            "creditTotal": "10.00",
+            "reasons": []
+          },
+          {
+            "journalReference": "JRN-FF94768778E34A1A",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "10.00",
+            "creditTotal": "10.00",
+            "reasons": []
+          }
+        ],
+        "requestHistoryComplete": true
+      },
+      "citationCounts": {
+        "event": 21,
+        "payment": 2,
+        "request": 2,
+        "journal": 2
+      },
+      "requestOrigins": [
+        "CUSTOMER",
+        "SYSTEM"
+      ],
+      "requestOutcomes": "NOT_RECORDED",
+      "inputSha256": "6f2fe4f443cd19356c77dd9bb4d027083a2ab26ff4a9263ba05c0aedaf8bdd23",
+      "mockReportClassification": "SUSPECTED_DUPLICATE"
+    },
+    {
+      "caseId": "CASE-000009",
+      "passed": true,
+      "mockedWireRequests": 2,
+      "inputKeys": [
+        "snapshot",
+        "financial_verification",
+        "evidence_references",
+        "retrieved_at"
+      ],
+      "excludedFields": [
+        "audit_events",
+        "audit_metadata",
+        "diagnosis_classification",
+        "excessPostingAmount",
+        "expectedMovementForOneTransfer",
+        "expected_root_cause",
+        "hidden_answers",
+        "private_metadata",
+        "recommended_action_code",
+        "required_cause_references",
+        "root_cause_code",
+        "scenario",
+        "scenario_code",
+        "verified_assessment"
+      ],
+      "nestedPoisonInputIdentical": true,
+      "journals": 2,
+      "entries": 4,
+      "financialVerification": {
+        "classification": "DOUBLE_POSTING_CONFIRMED",
+        "original": {
+          "payment_ref": "TXN-46BDC378061B4246",
+          "execution": "Posted",
+          "journals": [
+            "JRN-46BDC378061B4246"
+          ],
+          "valid_journals": [
+            "JRN-46BDC378061B4246"
+          ],
+          "payment_status": "COMPLETED",
+          "processing_state": "COMPLETED_POSTED",
+          "reason": "Payment-aligned ledger entries verified."
+        },
+        "duplicate": {
+          "payment_ref": "TXN-5E4F6811F0554C43",
+          "execution": "Posted",
+          "journals": [
+            "JRN-5E4F6811F0554C43"
+          ],
+          "valid_journals": [
+            "JRN-5E4F6811F0554C43"
+          ],
+          "payment_status": "COMPLETED",
+          "processing_state": "COMPLETED_POSTED",
+          "reason": "Payment-aligned ledger entries verified."
+        },
+        "completedPaymentCount": 2,
+        "confirmedPostedJournalCount": 2,
+        "validDebitTotals": {
+          "SGD": "6.66"
+        },
+        "validCreditTotals": {
+          "SGD": "6.66"
+        },
+        "accountMovements": [
+          {
+            "accountReference": "VERIFY-AUTH-RECEIVER",
+            "currency": "SGD",
+            "debit": "0.00",
+            "credit": "6.66",
+            "net": "6.66"
+          },
+          {
+            "accountReference": "VERIFY-AUTH-SENDER",
+            "currency": "SGD",
+            "debit": "6.66",
+            "credit": "0.00",
+            "net": "-6.66"
+          }
+        ],
+        "senderFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-SENDER",
+          "currency": "SGD",
+          "debit": "6.66",
+          "credit": "0.00",
+          "net": "-6.66"
+        },
+        "receiverFinancialMovement": {
+          "accountReference": "VERIFY-AUTH-RECEIVER",
+          "currency": "SGD",
+          "debit": "0.00",
+          "credit": "6.66",
+          "net": "6.66"
+        },
+        "journalValidation": [
+          {
+            "journalReference": "JRN-46BDC378061B4246",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "3.33",
+            "creditTotal": "3.33",
+            "reasons": []
+          },
+          {
+            "journalReference": "JRN-5E4F6811F0554C43",
+            "valid": true,
+            "status": "Posted",
+            "currency": "SGD",
+            "debitTotal": "3.33",
+            "creditTotal": "3.33",
+            "reasons": []
+          }
+        ],
+        "requestHistoryComplete": true
+      },
+      "citationCounts": {
+        "event": 20,
+        "payment": 2,
+        "request": 2,
+        "journal": 2
+      },
+      "requestOrigins": [
+        "CUSTOMER",
+        "CUSTOMER"
+      ],
+      "requestOutcomes": "NOT_RECORDED",
+      "inputSha256": "dd6a5edcea5163e36374ea9e15ea60879ec5538507482f0a0d11c89d074cc588",
+      "mockReportClassification": "LEGITIMATE_SEPARATE_INSTRUCTIONS"
+    }
+  ],
+  "paidOpenAICalls": 0,
+  "liveRequests": "GET investigation-evidence only; POST requests use in-process TestClient with mocked transport",
+  "databaseWrites": 0,
+  "productionChanges": 0
+}

@@ -4,15 +4,19 @@ import { readFileSync } from 'node:fs';
 import { fetchBankingSnapshot } from './banking.js';
 import { accounts, backendConnected, balanceFor, loadBackendSnapshot, postTransfer } from '../data/bankingRecords.js';
 
-test('backend client reports connection errors and invalid or unseeded snapshots', async () => {
+test('backend client reports errors and accepts an authoritative empty snapshot', async () => {
   const original = globalThis.fetch;
   try {
     globalThis.fetch = async () => ({ ok: false, status: 503 });
     await assert.rejects(fetchBankingSnapshot('/backend'), /503/);
+    globalThis.fetch = async () => { throw new TypeError('Network error'); };
+    await assert.rejects(fetchBankingSnapshot('/backend'), /Cannot reach FastAPI/);
+    globalThis.fetch = async () => ({ ok: false, status: 503, json: async () => ({ code: 'DATABASE_UNAVAILABLE', detail: 'PostgreSQL is unavailable; no local fallback.' }) });
+    await assert.rejects(fetchBankingSnapshot('/backend'), error => error.status === 503 && error.code === 'DATABASE_UNAVAILABLE' && error.message.includes('PostgreSQL'));
     globalThis.fetch = async () => ({ ok: true, json: async () => ({}) });
     await assert.rejects(fetchBankingSnapshot('/backend'), /invalid snapshot/);
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ customers: [], accounts: [], payment_transactions: [], ledger_journals: [], ledger_entries: [] }) });
-    await assert.rejects(fetchBankingSnapshot('/backend'), /No backend accounts/);
+    assert.equal((await fetchBankingSnapshot('/backend')).accounts.length, 0);
   } finally { globalThis.fetch = original; }
 });
 

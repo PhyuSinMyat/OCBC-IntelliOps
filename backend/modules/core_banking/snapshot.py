@@ -1,11 +1,13 @@
 """One consistent read snapshot for all three frontend source-record views."""
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.orm import defer
+from shared.schema import capabilities
 from .router import router, get_db
 from .models import Account, Customer, LedgerJournal, LedgerEntry
 from .service import account_query, serialize_account
 from modules.payment_processing.models import Transaction, ProcessingEvent
-from modules.payment_processing.service import payment_dtos, simulation_now, aware, reconciliation_seconds
+from modules.payment_processing.service import payment_dtos, simulation_now, aware, reconciliation_seconds, operational_audit_details
 from modules.intelliops.detection import case_dtos
 from modules.intelliops.models import AuditEvent
 from shared.security import actor
@@ -24,10 +26,12 @@ class SnapshotOut(BaseModel):
     simulationNow: str
     role: str
     reconciliationSeconds: int
+    schemaReady: bool
 
 
 @router.get("/banking-snapshot", response_model=SnapshotOut)
 def banking_snapshot(db=Depends(get_db), role=Depends(actor)):
+    schema = capabilities(db)
     query, _ = account_query()
     rows = db.execute(query.order_by(Account.account_ref)).all()
     accounts, refs, journal_refs = [], {}, {}
@@ -58,17 +62,20 @@ def banking_snapshot(db=Depends(get_db), role=Depends(actor)):
         ids = {e["accountId"] for e in entries if e["side"] == side and
                any(j["id"] == e["journalId"] and j["paymentId"] == reference for j in journals)}
         return next(iter(ids)) if len(ids) == 1 else "Unavailable"
-    payments = payment_dtos(db)
+    payments = payment_dtos(db, schema=schema)
     for payment in payments:
         payment["senderId"] = payment["senderId"] or party(payment["id"], "Debit")
         payment["receiverId"] = payment["receiverId"] or party(payment["id"], "Credit")
-    events = [dict(id=str(e.id), paymentId=transaction_refs[e.transaction_id], eventType=e.event_type,
+    event_query = select(ProcessingEvent).order_by(ProcessingEvent.created_at, ProcessingEvent.id)
+    if not schema['events']:
+        event_query = event_query.options(defer(ProcessingEvent.request_id))
+    events = [dict(id=str(e.id), paymentId=transaction_refs[e.transaction_id], requestId=str(e.request_id) if schema['events'] and e.request_id else None, eventType=e.event_type,
                    status=e.status, description=e.details, errorCode=e.error_code, occurredAt=aware(e.created_at))
-              for e in db.scalars(select(ProcessingEvent).order_by(ProcessingEvent.created_at, ProcessingEvent.id))]
+              for e in db.scalars(event_query)]
     customers = [dict(id=c.customer_ref, name=c.customer_name, customerType=c.customer_type)
                  for c in db.scalars(select(Customer).order_by(Customer.customer_ref))]
-    audit = [dict(id=str(e.id), action=e.action, actor=e.actor, reference=e.reference, details=e.details, createdAt=aware(e.created_at))
+    audit = [dict(id=str(e.id), action=e.action, actor=e.actor, reference=e.reference, details=operational_audit_details(e.details), createdAt=aware(e.created_at))
              for e in db.scalars(select(AuditEvent).order_by(AuditEvent.id.desc()).limit(500))]
     return dict(customers=customers, accounts=accounts, payment_transactions=payments, ledger_journals=journals,
-                ledger_entries=entries, processing_events=events, exception_cases=case_dtos(db), audit_events=audit,
+                ledger_entries=entries, processing_events=events, exception_cases=case_dtos(db, schema=schema), audit_events=audit, schemaReady=schema['ready'],
                 simulationNow=simulation_now().isoformat(), role=role, reconciliationSeconds=reconciliation_seconds())

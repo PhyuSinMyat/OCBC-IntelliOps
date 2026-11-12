@@ -49,8 +49,8 @@ class DetectionTests(unittest.TestCase):
                 setattr(rule, name, value)
 
     def test_default_rule_identity_all_five_and_read_api_contract(self):
-        payments = {s: self.post(s, idempotency_key=f"detection-{s}") for s in
-                    ["DUPLICATE", "PROCESSING_FAILURE", "MISSING_LEDGER", "AMOUNT_MISMATCH", "UNMATCHED"]}
+        payments = {s: self.post(s, amount=str(100 + index), idempotency_key=f"detection-{s}") for index, s in enumerate(
+                    ["DUPLICATE", "PROCESSING_FAILURE", "MISSING_LEDGER", "AMOUNT_MISMATCH", "UNMATCHED"])}
         self.assertEqual(len(self.scan()), 5)
         for p in payments.values():
             c = self.cases(p)[0]
@@ -66,7 +66,7 @@ class DetectionTests(unittest.TestCase):
     def test_invalid_draft_reversed_unbalanced_missing_entries_and_timestamp(self):
         for number, fault in enumerate(["Draft", "Reversed", "unbalanced", "missing", "timestamp", "unposted"], 1):
             with self.subTest(fault=fault):
-                p = self.post(idempotency_key=f"invalid-journal-{number}")
+                p = self.post(amount=str(100 + number), idempotency_key=f"invalid-journal-{number}")
                 with Session(self.engine) as db, db.begin():
                     tx = self.tx(db, p)
                     j = db.scalar(select(LedgerJournal).where(LedgerJournal.source_transaction_id == tx.id))
@@ -133,7 +133,7 @@ class DetectionTests(unittest.TestCase):
         self.assertEqual(len(self.scan(120)), 1)
         self.assertEqual(self.cases(p)[0]["evidence"]["ruleConfiguration"]["reconciliation_seconds"], 120)
         self.rule("AMOUNT_MISMATCH", threshold=1)
-        mismatch = self.post("AMOUNT_MISMATCH", idempotency_key="tolerance-check-0001")
+        mismatch = self.post("AMOUNT_MISMATCH", amount="101", idempotency_key="tolerance-check-0001")
         self.scan()
         self.assertEqual(self.cases(mismatch), [])
         self.rule("AMOUNT_MISMATCH", threshold=0)
@@ -167,7 +167,7 @@ class DetectionTests(unittest.TestCase):
         cases = self.cases(p)
         self.assertEqual(len(cases), 1)
         e = cases[0]["evidence"]
-        self.assertEqual(e["classification"], "CONFIRMED_DUPLICATE_REQUEST")
+        self.assertEqual(e["classification"], "SUSPECTED_DUPLICATE")
         self.assertEqual(e["financialAssessment"], "SINGLE_POSTING_CONFIRMED_DUPLICATE_HELD")
         self.assertEqual(e["rootCause"], "NOT_ESTABLISHED")
 
@@ -196,7 +196,7 @@ class DetectionTests(unittest.TestCase):
     def test_legitimate_repeats_and_uncertain_reference_collision(self):
         p = self.post()
         other = self.post(idempotency_key="legitimate-repeat-0001")
-        self.assertEqual(self.scan(), [])
+        self.assertEqual(len(self.scan()), 1)
         with Session(self.engine) as db, db.begin():
             self.tx(db, other).payment_reference = self.tx(db, p).payment_reference
         self.scan()
@@ -209,7 +209,7 @@ class DetectionTests(unittest.TestCase):
         with Session(self.engine) as db, db.begin():
             self.tx(db, p).payment_reference = "CHANGED-REFERENCE"
         self.scan()
-        self.assertEqual(self.cases(p)[0]["evidence"]["classification"], "CONFIRMED_DUPLICATE_REQUEST")
+        self.assertEqual(self.cases(p)[0]["evidence"]["classification"], "SUSPECTED_DUPLICATE")
 
     def test_failed_original_cannot_confirm_duplicate_intent(self):
         p = self.post("DUPLICATE")

@@ -39,13 +39,19 @@ class DetectionObservation(Base):
     """
     __tablename__ = "detection_observations"
     id: Mapped[int] = mapped_column(primary_key=True)
+    related_transaction_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id"), index=True)
     transaction_id: Mapped[int] = mapped_column(ForeignKey("transactions.id"), index=True)
     rule_id: Mapped[int] = mapped_column(ForeignKey("detection_rules.id"))
     defective: Mapped[bool] = mapped_column(Boolean)
     fingerprint: Mapped[str | None] = mapped_column(String(64))
     policy_fingerprint: Mapped[str] = mapped_column(String(64))
     observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-    __table_args__ = (UniqueConstraint("transaction_id", "rule_id", name="uq_detection_observation"),)
+    __table_args__ = (
+        Index("uq_detection_observation_single", "transaction_id", "rule_id", unique=True,
+              postgresql_where=related_transaction_id.is_(None), sqlite_where=related_transaction_id.is_(None)),
+        UniqueConstraint("transaction_id", "rule_id", "related_transaction_id", name="uq_detection_observation_pair"),
+        CheckConstraint("related_transaction_id IS NULL OR transaction_id <> related_transaction_id", name="ck_observation_pair"),
+    )
 
 
 
@@ -54,6 +60,7 @@ class ExceptionCase(Base):
     __tablename__ = "exceptions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    related_transaction_id: Mapped[int | None] = mapped_column(ForeignKey("transactions.id"), index=True)
     transaction_id: Mapped[int] = mapped_column(
         ForeignKey("transactions.id"), index=True
     )
@@ -75,7 +82,8 @@ class ExceptionCase(Base):
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolution_summary: Mapped[str | None] = mapped_column(Text)
-    __table_args__ = (Index("uq_active_detection", "detection_key", unique=True,
+    __table_args__ = (CheckConstraint("related_transaction_id IS NULL OR transaction_id <> related_transaction_id", name="ck_exception_pair"),
+                     Index("uq_active_detection", "detection_key", unique=True,
                            postgresql_where=status.not_in(["RESOLVED", "CLOSED"]),
                            sqlite_where=status.not_in(["RESOLVED", "CLOSED"])),)
 

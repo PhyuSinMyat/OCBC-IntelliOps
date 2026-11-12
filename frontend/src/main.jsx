@@ -5,10 +5,11 @@ import App from './app/App.jsx';
 import './styles.css';
 import { fetchBankingSnapshot } from './shared/api/banking.js';
 import { loadBackendSnapshot } from './shared/data/bankingRecords.js';
+import { bankingApiUrl } from './shared/api/config.js';
 
 const root = createRoot(document.getElementById('root'));
 async function start() {
-  const baseUrl = import.meta.env.VITE_BANKING_API_URL;
+  const baseUrl = bankingApiUrl;
   if (baseUrl) {
     root.render(<p role="status">Loading banking records…</p>);
     try { loadBackendSnapshot(await fetchBankingSnapshot(baseUrl)); }

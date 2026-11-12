@@ -33,15 +33,15 @@ test('ownership, status, currency and funds validation precedes all ledger chang
 });
 test('all five source scenarios are independently detectable after cutoffs without duplicate cases', () => {
   let state = initialRecords();
-  for (const scenario of ['DUPLICATE', 'PROCESSING_FAILURE', 'MISSING_LEDGER', 'AMOUNT_MISMATCH', 'UNMATCHED']) {
-    const result = processPayment(state, request({ scenario, idempotencyKey: scenario }), { role: 'ADMIN', now });
+  for (const [index, scenario] of ['DUPLICATE', 'PROCESSING_FAILURE', 'MISSING_LEDGER', 'AMOUNT_MISMATCH', 'UNMATCHED'].entries()) {
+    const result = processPayment(state, request({ scenario, amount: String(100 + index), idempotencyKey: scenario }), { role: 'ADMIN', now });
     state = result.state;
     assert.equal(state.exception_cases?.length || 0, 0);
   }
   assert.equal(state.ledger_journals.length, 5);
   assert.equal(state.payment_transactions.find(p => p.scenarioCode === 'PROCESSING_FAILURE').status, 'Failed');
   assert.ok(state.ledger_journals.every(j => validJournal(state, j)));
-  assert.equal(balanceFor(state, accounts[0]).current, 4429999);
+  assert.equal(balanceFor(state, accounts[0]).current, 4430699);
   const immediate = detectPayments(state, { now });
   assert.equal(immediate.exception_cases.length, 2);
   const detected = detectPayments(immediate, { now: later });

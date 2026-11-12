@@ -3,76 +3,60 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 import json
 import unittest
-from datetime import datetime, timezone, timedelta
 from unittest.mock import patch
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
-import test_accounts
-import test_payments
-import test_detection
+import test_investigation_evidence_phase1 as evidence_tests
+from fastapi.testclient import TestClient
 from main import app
 from shared.database import Base
+from shared.security import actor
+from modules.core_banking.router import get_db
+from modules.payment_processing.scenarios import A, B, C
 from modules.payment_processing.models import Transaction, PaymentInstruction, ProcessingEvent
 from modules.intelliops.models import ExceptionCase
 from modules.intelliops.investigation_llm import InvestigationProvider, get_investigation_provider
 
 
 class InvestigationTests(unittest.TestCase):
-    setUpDatabase = test_accounts.AccountTests.setUp
-    tearDownDatabase = test_accounts.AccountTests.tearDown
-    setUp = test_payments.PaymentTests.setUp
-    tearDown = test_payments.PaymentTests.tearDown
-    request = test_payments.PaymentTests.request
-    post = test_payments.PaymentTests.post
-    add_posting = test_detection.DetectionTests.add_posting
+    def setUp(self):
+        evidence_tests.EvidencePhase1Tests.setUp(self)
+        def get_test_db():
+            with Session(self.engine) as db:
+                yield db
+        app.dependency_overrides[get_db] = get_test_db
+        app.dependency_overrides[actor] = lambda: 'ADMIN'
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.client.close()
+        evidence_tests.EvidencePhase1Tests.tearDown(self)
+
+    def post(self, **overrides):
+        body = dict(sender_account_ref='ACC-100003', receiver_account_ref='ACC-100001', amount='100.00',
+            idempotency_key='isolated-investigation-payment')
+        body.update(overrides)
+        response = self.client.post('/api/payments', json=body)
+        self.assertEqual(response.status_code, 201, response.text)
+        return response.json()
 
     def fixture(self, scenario="historical"):
-        duplicate = self.post("NORMAL" if scenario == "C" else "DUPLICATE")
-        with Session(self.engine, expire_on_commit=False) as db, db.begin():
-            b = db.scalar(select(Transaction).where(Transaction.reference == duplicate["id"]))
-            bi = db.scalar(select(PaymentInstruction).where(PaymentInstruction.transaction_id == b.id))
-            if scenario == "C":
-                a = None
-            else:
-                ai = db.get(PaymentInstruction, bi.original_payment_id)
-                a = db.get(Transaction, ai.transaction_id)
-        if scenario == "C":
-            original = self.post(idempotency_key="separate-authorized-0002")
-            with Session(self.engine) as db:
-                a = db.scalar(select(Transaction).where(Transaction.reference == original["id"]))
+        # Exercise the production generator's complete request/event shapes. No
+        # migration helpers, live databases or hand-invented authorization records.
+        case_id, ids = evidence_tests.EvidencePhase1Tests.generate(self, {'historical': A, 'A': A, 'B': B, 'C': C}[scenario])
         with Session(self.engine) as db, db.begin():
-            a, b = db.get(Transaction, a.id), db.get(Transaction, b.id)
-            db.add(ExceptionCase(id=4, transaction_id=b.id, exception_type="Duplicate Transaction",
-                                 severity="HIGH", status="OPEN", evidence={"originalReference": a.reference}))
-            now = datetime(2026, 11, 3, 3, tzinfo=timezone.utc)
-            def event(tx, kind, payload, seconds=0):
-                db.add(ProcessingEvent(transaction_id=tx.id, event_type=kind, status="COMPLETED",
-                    details=json.dumps(payload), created_at=now + timedelta(seconds=seconds)))
-            if scenario == "A":
-                for n, tx in enumerate((a, b)):
-                    event(tx, "CLIENT_SUBMISSION", dict(origin="CUSTOMER", trigger="USER_SUBMIT",
-                        intent_id="same-intent", submission_id=f"submission-{n}"), n)
-            if scenario == "B":
-                b.status = "COMPLETED"
-                self.add_posting(db, b, "JRN-ISOLATED-RETRY")
-                event(a, "ACK_TIMEOUT", dict(origin="SYSTEM", correlation_id="retry-1"))
-                payload = dict(origin="SYSTEM", correlation_id="retry-1", original_payment_ref=a.reference)
-                event(b, "RETRY_SUBMITTED", dict(**payload, trigger="AUTOMATIC_RETRY"), 1)
-                event(b, "IDEMPOTENCY_CHECK_FAILED", payload, 2)
-                event(b, "PROCESSING_STARTED", {}, 3)
-                event(b, "PROCESSING_COMPLETED", {}, 4)
-            if scenario == "C":
-                for n, tx in enumerate((a, b)):
-                    event(tx, "PAYMENT_AUTHORIZED", dict(authorized=True, authorization_id=f"auth-{n}", intent_id=f"intent-{n}"))
-        return duplicate
+            db.get(ExceptionCase, int(case_id.split('-')[1])).id = 4
+            if scenario == 'historical':
+                for source in db.scalars(select(ProcessingEvent).where(ProcessingEvent.transaction_id.in_(ids), ProcessingEvent.event_type == 'CLIENT_SUBMISSION')):
+                    db.delete(source)
 
     def fingerprint(self):
         with self.engine.connect() as connection:
             return {table.name: sorted(repr(tuple(row)) for row in connection.execute(select(table)))
                     for table in Base.metadata.sorted_tables}
 
-    def provider(self, mutate=None, status=200, error=None):
+    def provider(self, mutate=None, status=200, error=None, output=None):
         def handler(request):
             if error:
                 raise error
@@ -81,12 +65,19 @@ class InvestigationTests(unittest.TestCase):
             self.assertFalse(body["store"])
             self.assertTrue(body["text"]["format"]["strict"])
             evidence = json.loads(body["input"])
-            bounds = evidence["verified_assessment"]
-            result = {k: bounds[k] for k in ("diagnosis_classification", "root_cause_code", "financial_classification", "recommended_action_code")}
-            result.update(facts=[dict(statement="Source records support the bounded assessment.",
-                evidence_refs=bounds["required_cause_references"] or evidence["evidence_references"][:1])],
+            self.assertNotIn('verified_assessment', evidence)
+            result = dict(diagnosis_classification='SUSPECTED_DUPLICATE', root_cause_code='CAUSE_NOT_ESTABLISHED',
+                financial_classification=evidence['financial_verification']['classification'],
+                recommended_action_code='ESCALATE_FOR_PAYMENT_VERIFICATION', root_cause_title='Cause not established',
+                root_cause_explanation='Operational evidence needs further review.', root_cause_evidence_refs=[])
+            result.update(facts=[dict(statement="Source records require review.",
+                evidence_refs=evidence['evidence_references'][:1])],
                 hypotheses=[], uncertainty=["Further evidence may change the assessment."],
                 recommendation_reason="Human review of the cited source records is required.")
+            if output:
+                result.update(output)
+                if result['root_cause_code'] != 'CAUSE_NOT_ESTABLISHED':
+                    result['root_cause_evidence_refs'] = [r for r in evidence['evidence_references'] if r.startswith(('event:', 'request:'))][:1]
             if mutate:
                 mutate(result)
             return httpx.Response(status, json=dict(status="completed", output=[dict(type="message",
@@ -113,7 +104,7 @@ class InvestigationTests(unittest.TestCase):
                 before = self.fingerprint()
                 evidence = self.client.get("/api/exceptions/CASE-000004/investigation-evidence")
                 self.assertEqual(evidence.status_code, 200, evidence.text)
-                self.provider()
+                self.provider(output=dict(diagnosis_classification=values[0], root_cause_code=values[1], recommended_action_code=values[3]))
                 response = self.run_case()
                 self.assertEqual(response.status_code, 200, response.text)
                 report = response.json()
@@ -160,14 +151,14 @@ class InvestigationTests(unittest.TestCase):
 
     def test_causal_citations_required(self):
         self.fixture("B")
-        self.provider(lambda r: r["facts"][0].update(evidence_refs=["case:CASE-000004"]))
+        self.provider(lambda r: r.update(root_cause_evidence_refs=["case:CASE-000004"]), output=dict(root_cause_code='RETRY_CONTROL_HYPOTHESIS'))
         self.assertEqual(self.run_case().status_code, 502)
 
     def test_unbalanced_ledger_cannot_claim_double_posting(self):
         self.fixture("B")
         from modules.core_banking.models import LedgerJournal, LedgerEntry
         with Session(self.engine) as db, db.begin():
-            journal = db.scalar(select(LedgerJournal).where(LedgerJournal.journal_ref == "JRN-ISOLATED-RETRY"))
+            journal = db.scalar(select(LedgerJournal).where(LedgerJournal.source_transaction_id == db.get(ExceptionCase, 4).transaction_id))
             entry = db.scalar(select(LedgerEntry).where(LedgerEntry.journal_id == journal.journal_id))
             entry.amount += 1
         self.provider()

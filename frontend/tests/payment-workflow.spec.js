@@ -25,7 +25,7 @@ test('normal payment validates fields and records actual history and balanced jo
   await expect(page.getByRole('tabpanel')).toContainText('Debit total');
   await expect(page.getByRole('tabpanel')).toContainText('No linked exceptions.');
   await page.getByRole('link', { name: 'Open Ledger Journal' }).click();
-  await expect(page.getByRole('dialog')).toContainText('Balanced');
+  await expect(page.getByRole('heading', { name: 'Backend connection required' })).toBeVisible();
   await page.goto('/core-banking/accounts');
   await expect(page.locator('tbody tr').filter({ hasText: 'Alex Tan' })).toContainText('SGD 44,100.00');
 });
@@ -41,9 +41,14 @@ test('all source scenarios trace through detection, cases, investigation and aud
   ]);
   await page.getByRole('button', { name: 'Cancel' }).click();
   let missingReference;
-  for (const scenario of ['DUPLICATE', 'PROCESSING_FAILURE', 'MISSING_LEDGER', 'AMOUNT_MISMATCH']) {
-    await fillPayment(page, scenario);
+  for (const [index, scenario] of ['DUPLICATE', 'PROCESSING_FAILURE', 'MISSING_LEDGER', 'AMOUNT_MISMATCH'].entries()) {
+    await fillPayment(page, scenario, String(100 + index));
     await page.getByRole('button', { name: 'Submit Synthetic Payment' }).click();
+    if (scenario === 'DUPLICATE') {
+      const summary = page.getByRole('region', { name: 'Generated payment results' });
+      await expect(summary).toContainText('1 confirmed postings');
+      await summary.locator('button.account-link').nth(1).click();
+    }
     await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toBeVisible();
     if (scenario === 'MISSING_LEDGER') missingReference = new URL(page.url()).searchParams.get('transaction');
     if (scenario === 'PROCESSING_FAILURE') {

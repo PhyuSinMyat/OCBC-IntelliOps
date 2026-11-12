@@ -37,11 +37,11 @@ test('all source scenarios trace through detection, cases, investigation and aud
   await expect(page.getByLabel('Exception type')).toBeVisible();
   await expect(page.getByLabel('Exception type').locator('option')).toHaveText([
     'No exception (Normal Payment)', 'Missing Ledger Posting', 'Amount Mismatch',
-    'Duplicate Transaction', 'Payment Processing Failure',
+    'Unmatched Transaction', 'Duplicate Transaction', 'Payment Processing Failure',
   ]);
   await page.getByRole('button', { name: 'Cancel' }).click();
   let missingReference;
-  for (const [index, scenario] of ['DUPLICATE', 'PROCESSING_FAILURE', 'MISSING_LEDGER', 'AMOUNT_MISMATCH'].entries()) {
+  for (const [index, scenario] of ['DUPLICATE', 'PROCESSING_FAILURE', 'MISSING_LEDGER', 'AMOUNT_MISMATCH', 'UNMATCHED'].entries()) {
     await fillPayment(page, scenario, String(100 + index));
     await page.getByRole('button', { name: 'Submit Synthetic Payment' }).click();
     if (scenario === 'DUPLICATE') {
@@ -53,7 +53,7 @@ test('all source scenarios trace through detection, cases, investigation and aud
     if (scenario === 'MISSING_LEDGER') missingReference = new URL(page.url()).searchParams.get('transaction');
     if (scenario === 'PROCESSING_FAILURE') {
       await page.getByRole('tab', { name: 'Processing History' }).click();
-      await expect(page.getByRole('tabpanel')).toContainText('SIM_PROCESSING_ERROR');
+      await expect(page.getByRole('tabpanel')).toContainText('PROCESSOR_UNAVAILABLE');
       await expect(page.getByRole('tabpanel')).not.toContainText('Processing completed');
     }
     await page.getByRole('button', { name: 'Close details' }).click();
@@ -61,7 +61,7 @@ test('all source scenarios trace through detection, cases, investigation and aud
   }
   await page.getByRole('button', { name: 'Advance Local Clock +61s' }).click();
   await page.getByRole('button', { name: 'Run Detection', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('4 new cases');
+  await expect(page.getByRole('status')).toContainText('5 new cases');
   await page.getByRole('button', { name: 'Run Detection', exact: true }).click();
   await expect(page.getByRole('status')).toContainText('0 new cases');
   await page.goto('/payments/transactions?transaction=' + missingReference);

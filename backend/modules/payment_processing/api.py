@@ -14,7 +14,7 @@ from .models import Transaction, PaymentInstruction, ProcessingEvent
 from .schemas import PaymentRequest, ScenarioRequest, ExceptionBatchRequest, PaymentOut, PaymentPage, EventOut, RelatedOut
 from .service import create_payment, payment_dtos, find_payment, PaymentError, aware, fingerprint, operational_audit_details
 from .batch import create_exception_batch
-from .scenarios import generate_duplicate, run_result
+from .scenarios import generate_duplicate, generate_exception_variant, run_result
 from .schemas import ScenarioOut
 from shared.schema import capabilities, require_current_schema
 
@@ -92,11 +92,11 @@ def post_payment(request: PaymentRequest, db=Depends(get_db), role=Depends(actor
 
 @router.post("/demo/payments/scenario", response_model=ScenarioOut | PaymentOut, status_code=201)
 def post_scenario(request: ScenarioRequest, db=Depends(get_db), role=Depends(administrator)):
-    if request.duplicate_scenario:
+    if request.duplicate_scenario or request.scenario_variant:
         try:
             with db.begin():
                 require_current_schema(db)
-                batch = generate_duplicate(db, request, role)
+                batch = generate_duplicate(db, request, role) if request.duplicate_scenario else generate_exception_variant(db, request, role)
             return run_result(db, batch)
         except PaymentError as error:
             raise HTTPException(error.status, str(error)) from error

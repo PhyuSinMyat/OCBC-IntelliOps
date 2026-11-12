@@ -3,19 +3,21 @@ import RecordDrawer from '../../shared/components/RecordDrawer.jsx';
 import { accounts, backendConnected, createSyntheticPayment, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { parseAmount, scenarios } from '../../shared/data/paymentSimulation.js';
 import { duplicateScenarios } from '../../shared/data/duplicateScenarios.js';
+import { variantsFor } from '../../shared/data/exceptionScenarios.js';
 
-const selectableScenarios = ['MISSING_LEDGER', 'AMOUNT_MISMATCH', 'DUPLICATE', 'PROCESSING_FAILURE'];
+const selectableScenarios = ['MISSING_LEDGER', 'AMOUNT_MISMATCH', 'UNMATCHED', 'DUPLICATE', 'PROCESSING_FAILURE'];
 const scenarioHelp = {
   NORMAL: 'Creates a normal payment with a balanced ledger journal.',
   MISSING_LEDGER: 'Completes payment processing without creating a ledger journal. Detection raises the case after the reconciliation cutoff.',
   AMOUNT_MISMATCH: 'Posts a balanced journal for one cent less than the payment amount.',
   DUPLICATE: 'Creates an original payment and holds a duplicate instruction without a second posting.',
   PROCESSING_FAILURE: 'Fails payment processing before any ledger journal is created.',
+  UNMATCHED: 'Completes processing with a posted journal whose payment reference cannot be correlated.',
 };
 
 export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
   const records = useBankingRecords();
-  const [values, setValues] = useState({ senderId: '', receiverId: '', amount: '', scenario: 'NORMAL', duplicateScenario: 'CUSTOMER_DOUBLE_CLICK' });
+  const [values, setValues] = useState({ senderId: '', receiverId: '', amount: '', scenario: 'NORMAL', duplicateScenario: 'CUSTOMER_DOUBLE_CLICK', scenarioVariant: '' });
   const [search, setSearch] = useState({ senderId: '', receiverId: '' });
   const [errors, setErrors] = useState({});
   const [busy, setBusy] = useState(false);
@@ -23,7 +25,9 @@ export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
   const key = useRef(crypto.randomUUID());
   const sender = accounts.find(a => a.id === values.senderId), receiver = accounts.find(a => a.id === values.receiverId);
   const change = (name, value) => {
-    setValues(previous => ({ ...previous, [name]: value }));
+    setValues(previous => name === 'scenario'
+      ? { ...previous, scenario: value, scenarioVariant: variantsFor(value)[0]?.code || '' }
+      : { ...previous, [name]: value });
     setErrors({});
     key.current = crypto.randomUUID();
   };
@@ -71,7 +75,15 @@ export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
         <p className="history-caption">{duplicateScenarios.find(s => s.code === values.duplicateScenario)?.description}
           {!backendConnected && ' Local-only simulation: saved in this browser, not PostgreSQL.'}</p>
       </>}
-      {values.scenario !== 'DUPLICATE' && <p className="payment-scenario-help">{role === 'ADMIN' ? scenarioHelp[values.scenario] : scenarioHelp.NORMAL}</p>}
+      {role === 'ADMIN' && variantsFor(values.scenario).length > 0 && <>
+        <label htmlFor="exception-scenario-variant">Real-world scenario<select id="exception-scenario-variant" value={values.scenarioVariant}
+          onChange={e => change('scenarioVariant', e.target.value)} disabled={busy}>
+          {variantsFor(values.scenario).map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
+        </select></label>
+        <p className="history-caption">{variantsFor(values.scenario).find(item => item.code === values.scenarioVariant)?.description}
+          {!backendConnected && ' Local-only simulation: saved in this browser, not PostgreSQL.'}</p>
+      </>}
+      {values.scenario !== 'DUPLICATE' && variantsFor(values.scenario).length === 0 && <p className="payment-scenario-help">{role === 'ADMIN' ? scenarioHelp[values.scenario] : scenarioHelp.NORMAL}</p>}
       <p className="history-caption">Exception scenarios generate source evidence; they do not create cases directly. Run detection separately. Reconciliation-dependent cases use a {records.reconciliationSeconds || 60}-second cutoff.</p>
     </fieldset>
     {errors.submit && <p role="alert" className="movement-out">{errors.submit}</p>}

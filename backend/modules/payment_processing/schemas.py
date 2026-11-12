@@ -20,12 +20,32 @@ class PaymentRequest(BaseModel):
 class ScenarioRequest(PaymentRequest):
     scenario_code: Scenario
     duplicate_scenario: Literal['CUSTOMER_DOUBLE_CLICK', 'AUTOMATIC_RETRY_FAILURE', 'LEGITIMATE_REPEATED_PAYMENTS'] | None = None
+    scenario_variant: Literal[
+        'PROCESSOR_UNAVAILABLE', 'CLEARING_REJECTION', 'ACCOUNT_RESTRICTED_DURING_PROCESSING',
+        'POSTING_EVENT_LOST', 'LEDGER_TRANSACTION_ROLLBACK', 'LEDGER_CONSUMER_DEAD_LETTER',
+        'FEE_INCORRECTLY_NETTED', 'PARTIAL_SETTLEMENT', 'DECIMAL_SCALING_ERROR',
+        'REFERENCE_TYPO', 'BATCH_CORRELATION_SHIFT', 'MANUAL_JOURNAL_MISLINK'] | None = None
     run_key: str | None = Field(None, min_length=8, max_length=100)
 
     @model_validator(mode='after')
     def validate_variant(self):
-        if bool(self.duplicate_scenario) != bool(self.run_key) or self.duplicate_scenario and self.scenario_code != 'DUPLICATE':
-            raise ValueError('A duplicate variant and run_key must be supplied together with DUPLICATE.')
+        selected = bool(self.duplicate_scenario or self.scenario_variant)
+        if bool(self.run_key) != selected or self.duplicate_scenario and self.scenario_variant:
+            raise ValueError('Exactly one scenario variant and run_key must be supplied together.')
+        if self.duplicate_scenario and self.scenario_code != 'DUPLICATE':
+            raise ValueError('A duplicate variant must be supplied with DUPLICATE.')
+        expected = {
+            'PROCESSOR_UNAVAILABLE': 'PROCESSING_FAILURE', 'CLEARING_REJECTION': 'PROCESSING_FAILURE',
+            'ACCOUNT_RESTRICTED_DURING_PROCESSING': 'PROCESSING_FAILURE',
+            'POSTING_EVENT_LOST': 'MISSING_LEDGER', 'LEDGER_TRANSACTION_ROLLBACK': 'MISSING_LEDGER',
+            'LEDGER_CONSUMER_DEAD_LETTER': 'MISSING_LEDGER',
+            'FEE_INCORRECTLY_NETTED': 'AMOUNT_MISMATCH', 'PARTIAL_SETTLEMENT': 'AMOUNT_MISMATCH',
+            'DECIMAL_SCALING_ERROR': 'AMOUNT_MISMATCH',
+            'REFERENCE_TYPO': 'UNMATCHED', 'BATCH_CORRELATION_SHIFT': 'UNMATCHED',
+            'MANUAL_JOURNAL_MISLINK': 'UNMATCHED',
+        }
+        if self.scenario_variant and expected[self.scenario_variant] != self.scenario_code:
+            raise ValueError('Scenario variant does not match its exception type.')
         return self
 
 

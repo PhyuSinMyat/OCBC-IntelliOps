@@ -6,15 +6,26 @@ from datetime import timedelta
 from decimal import Decimal
 from uuid import uuid4
 from sqlalchemy import select, text
-from modules.core_banking.models import Account, LedgerJournal
+from modules.core_banking.models import Account, LedgerJournal, LedgerEntry
 from modules.core_banking.service import account_balance
 from modules.intelliops.models import DetectionRule
 from modules.intelliops.rules import BY_CODE, validate_configuration
-from .models import Transaction, PaymentInstruction, PaymentRequestHistory, ExceptionBatch, ExceptionBatchItem
+from .models import Transaction, ProcessingEvent, PaymentInstruction, PaymentRequestHistory, ExceptionBatch, ExceptionBatchItem
 from .schemas import PaymentRequest
 from .service import create_payment, record_request, event, PaymentError, simulation_now, payment_dtos
 
 A, B, C = 'CUSTOMER_DOUBLE_CLICK', 'AUTOMATIC_RETRY_FAILURE', 'LEGITIMATE_REPEATED_PAYMENTS'
+
+OTHER_VARIANTS = {
+    'PROCESSING_FAILURE': {
+        'PROCESSOR_UNAVAILABLE', 'CLEARING_REJECTION', 'ACCOUNT_RESTRICTED_DURING_PROCESSING'},
+    'MISSING_LEDGER': {
+        'POSTING_EVENT_LOST', 'LEDGER_TRANSACTION_ROLLBACK', 'LEDGER_CONSUMER_DEAD_LETTER'},
+    'AMOUNT_MISMATCH': {
+        'FEE_INCORRECTLY_NETTED', 'PARTIAL_SETTLEMENT', 'DECIMAL_SCALING_ERROR'},
+    'UNMATCHED': {
+        'REFERENCE_TYPO', 'BATCH_CORRELATION_SHIFT', 'MANUAL_JOURNAL_MISLINK'},
+}
 
 
 def instruction_execution(db, anchor_id, lookup=None):
@@ -151,6 +162,113 @@ def generate_duplicate(db, request, role):
     for index, tx in enumerate(payments):
         db.add(ExceptionBatchItem(batch_id=batch.batch_id, transaction_id=tx.id, scenario_code='DUPLICATE', sequence=index))
     batch.status, batch.completed_at = 'COMPLETED', now + timedelta(seconds=8)
+    db.flush()
+    return batch
+
+
+def generate_exception_variant(db, request, role):
+    """Create one evidence-rich non-duplicate scenario through ordinary execution."""
+    if role != 'ADMIN':
+        raise PaymentError('Only ADMIN may generate scenarios.', 403)
+    if request.scenario_code not in OTHER_VARIANTS or request.scenario_variant not in OTHER_VARIANTS[request.scenario_code]:
+        raise PaymentError('Scenario variant does not match its exception type.')
+    if db.bind.dialect.name == 'postgresql':
+        key = int.from_bytes(hashlib.sha256(request.run_key.encode()).digest()[:8], 'big', signed=True)
+        db.execute(text('SELECT pg_advisory_xact_lock(:key)'), {'key': key})
+    payload = request.model_dump(exclude={'run_key', 'idempotency_key'}, mode='json')
+    payload['amount'] = str(request.amount.quantize(Decimal('0.01')))
+    signature = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+    batch = db.scalar(select(ExceptionBatch).where(ExceptionBatch.run_key == request.run_key).with_for_update())
+    if batch:
+        if batch.input_fingerprint != signature:
+            raise PaymentError('Run key already used with different inputs.', 409)
+        return batch
+
+    now = simulation_now()
+    variant = request.scenario_variant
+    batch = ExceptionBatch(run_key=request.run_key, input_fingerprint=signature,
+        requested_scenarios=[request.scenario_code], count_per_type=1,
+        private_metadata={'scenario_variant': variant}, status='PROCESSING', created_by=role, created_at=now)
+    db.add(batch)
+    db.flush()
+    payment = PaymentRequest(sender_account_ref=request.sender_account_ref, receiver_account_ref=request.receiver_account_ref,
+        amount=request.amount, currency=request.currency, idempotency_key=f'exec:{batch.batch_id}:0')
+    tx, _ = create_payment(db, payment, role, request.scenario_code, now)
+    instruction = db.scalar(select(PaymentInstruction).where(PaymentInstruction.transaction_id == tx.id))
+    receipt = db.scalar(select(PaymentRequestHistory).where(PaymentRequestHistory.payment_id == instruction.payment_id)
+                        .order_by(PaymentRequestHistory.received_at))
+
+    def source_event(kind, seconds, component, **facts):
+        event(db, tx, kind, tx.status, dict(source_component=component, request_id=str(receipt.request_id),
+            intent_id=str(receipt.business_instruction_id), origin=receipt.origin, **facts),
+            now + timedelta(seconds=seconds), request_id=receipt.request_id)
+
+    existing = {row.event_type: row for row in db.scalars(select(ProcessingEvent).where(
+        ProcessingEvent.transaction_id == tx.id).order_by(ProcessingEvent.id))}
+
+    if request.scenario_code == 'PROCESSING_FAILURE':
+        details = {
+            'PROCESSOR_UNAVAILABLE': ('PROCESSOR_CONNECTION_FAILED', 'PROCESSOR_UNAVAILABLE', 'The downstream payment processor was unavailable.'),
+            'CLEARING_REJECTION': ('CLEARING_REJECTED', 'CLEARING_REJECTED', 'The clearing network rejected routing or beneficiary data.'),
+            'ACCOUNT_RESTRICTED_DURING_PROCESSING': ('ACCOUNT_STATUS_CHANGED', 'ACCOUNT_RESTRICTED', 'The sender account became restricted after validation.'),
+        }
+        kind, code, message = details[variant]
+        if variant == 'CLEARING_REJECTION':
+            source_event('CLEARING_SUBMITTED', 1, 'payment_gateway')
+        source_event(kind, 2, 'payment_gateway' if variant != 'ACCOUNT_RESTRICTED_DURING_PROCESSING' else 'core_banking')
+        instruction.failure_code, instruction.failure_description = code, message
+        failed = existing['PROCESSING_FAILED']
+        failed.error_code, failed.details, failed.created_at = code, message, now + timedelta(seconds=3)
+
+    elif request.scenario_code == 'MISSING_LEDGER':
+        if variant == 'POSTING_EVENT_LOST':
+            source_event('LEDGER_EVENT_PUBLICATION_FAILED', 2, 'payment_processor')
+        elif variant == 'LEDGER_TRANSACTION_ROLLBACK':
+            source_event('LEDGER_POSTING_STARTED', 1, 'ledger', posting_started=True)
+            source_event('LEDGER_TRANSACTION_ROLLED_BACK', 2, 'ledger', posting_started=True)
+        else:
+            source_event('LEDGER_EVENT_PUBLISHED', 1, 'payment_processor')
+            source_event('LEDGER_CONSUMER_RETRY', 1.5, 'ledger')
+            source_event('LEDGER_MESSAGE_DEAD_LETTERED', 2, 'ledger')
+        instruction.completed_at = now + timedelta(seconds=3)
+        existing['PROCESSING_COMPLETED'].created_at = now + timedelta(seconds=3)
+
+    elif request.scenario_code == 'AMOUNT_MISMATCH':
+        journal = db.scalar(select(LedgerJournal).where(LedgerJournal.source_transaction_id == tx.id))
+        entries = db.scalars(select(LedgerEntry).where(LedgerEntry.journal_id == journal.journal_id)).all()
+        amount = request.amount - Decimal('0.01')
+        if variant == 'PARTIAL_SETTLEMENT':
+            amount = max(Decimal('0.01'), (request.amount / 2).quantize(Decimal('0.01')))
+        elif variant == 'DECIMAL_SCALING_ERROR':
+            amount = max(Decimal('0.01'), (request.amount / 100).quantize(Decimal('0.01')))
+        for entry in entries:
+            entry.amount = amount
+        kind = {'FEE_INCORRECTLY_NETTED': 'FEE_APPLIED_TO_PRINCIPAL',
+                'PARTIAL_SETTLEMENT': 'PARTIAL_SETTLEMENT_APPLIED',
+                'DECIMAL_SCALING_ERROR': 'AMOUNT_SCALE_TRANSFORMED'}[variant]
+        source_event(kind, 1, 'payment_processor', amount=str(amount), currency=tx.currency)
+        journal.posted_at = now + timedelta(seconds=2)
+        existing['LEDGER_POSTED'].created_at = now + timedelta(seconds=2)
+        instruction.completed_at = now + timedelta(seconds=3)
+        existing['PROCESSING_COMPLETED'].created_at = now + timedelta(seconds=3)
+
+    else:
+        journal = db.scalar(select(LedgerJournal).where(LedgerJournal.source_transaction_id == tx.id))
+        prefixes = {'REFERENCE_TYPO': 'TYPO', 'BATCH_CORRELATION_SHIFT': 'BATCH-SHIFT',
+                    'MANUAL_JOURNAL_MISLINK': 'MANUAL-LINK'}
+        journal.payment_reference = f'{prefixes[variant]}-{tx.reference}'
+        kind = {'REFERENCE_TYPO': 'REFERENCE_MAPPING_APPLIED',
+                'BATCH_CORRELATION_SHIFT': 'SETTLEMENT_BATCH_CORRELATED',
+                'MANUAL_JOURNAL_MISLINK': 'MANUAL_JOURNAL_SUBMITTED'}[variant]
+        source_event(kind, 1, 'ledger', journal_reference=journal.journal_ref)
+        journal.posted_at = now + timedelta(seconds=2)
+        existing['LEDGER_POSTED'].created_at = now + timedelta(seconds=2)
+        instruction.completed_at = now + timedelta(seconds=3)
+        existing['PROCESSING_COMPLETED'].created_at = now + timedelta(seconds=3)
+
+    db.add(ExceptionBatchItem(batch_id=batch.batch_id, transaction_id=tx.id,
+                              scenario_code=request.scenario_code, sequence=0))
+    batch.status, batch.completed_at = 'COMPLETED', now + timedelta(seconds=4)
     db.flush()
     return batch
 

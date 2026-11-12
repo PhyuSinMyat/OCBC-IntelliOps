@@ -3,6 +3,7 @@
 import { processPayment, detectPayments, nextReference } from './paymentSimulation.js';
 import { paymentRequest, exceptionRequest, fetchBankingSnapshot } from '../api/banking.js';
 import { processDuplicateRun } from './duplicateScenarios.js';
+import { processExceptionRun } from './exceptionScenarios.js';
 import { bankingApiUrl, backendModeRequested } from '../api/config.js';
 
 export const customers = [
@@ -111,13 +112,16 @@ export async function createSyntheticPayment(input, role = 'ANALYST') {
       currency: input.currency || accounts.find(a => a.id === input.senderId)?.currency, idempotency_key: input.idempotencyKey,
       ...(input.scenario && input.scenario !== 'NORMAL' ? { scenario_code: input.scenario } : {}),
       ...(input.scenario === 'DUPLICATE' && input.duplicateScenario ? { duplicate_scenario: input.duplicateScenario, run_key: input.runKey } : {}),
+      ...(input.scenarioVariant ? { scenario_variant: input.scenarioVariant, run_key: input.runKey } : {}),
     });
     await refreshBackend({ fresh: true });
     return result;
   }
   const result = input.scenario === 'DUPLICATE' && input.duplicateScenario
     ? processDuplicateRun(state, input, { role, now: getSimulationNow() })
-    : processPayment(state, input, { role, now: getSimulationNow() });
+    : input.scenarioVariant
+      ? processExceptionRun(state, input, { role, now: getSimulationNow() })
+      : processPayment(state, input, { role, now: getSimulationNow() });
   save(result.state);
   return result.payment;
 }

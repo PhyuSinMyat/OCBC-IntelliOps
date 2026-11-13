@@ -8,7 +8,9 @@ import { developmentFixture, fixtureOptions } from './investigation/fixtures.js'
 import { getRuns, investigationKey, investigationRevision, loadPersistedInvestigations, sendToResolution, startInvestigation, subscribeInvestigations } from './investigation/service.js';
 import { displayTime, humanize, InvestigationTrace, Section, SourceLink } from './investigation/ReportSections.jsx';
 import { CausalTimeline, DiagnosisHero, EvidenceExplorer, ExecutionPaths, FinancialImpact, KeyResults, NextBestAction, ReadyInvestigation, StageDetails, ModelFindings } from './investigation/CommandCenter.jsx';
+import { AnalystAttention, CitationExplorer, EvidencePanel, FinancialOverview, InvestigationSkeleton, KeyTimeline, PaymentRelationshipFlow, SavedHistory } from './investigation/WorkspaceSections.jsx';
 import './investigation.css';
+import './investigation-refinement.css';
 
 function DevelopmentExamples() {
   return <details className="inv-development"><summary>Development examples</summary><p>Isolated fixtures. Shared payments, exceptions and ledger data are unchanged.</p><div className="inv-example-links">{Object.entries(fixtureOptions).map(([key, title]) => <Link key={key} to={`/intelliops/investigation?fixture=${key}`}>{title}<ArrowRight size={14}/></Link>)}</div></details>;
@@ -59,6 +61,7 @@ export default function AIInvestigation() {
 }
 
 function InvestigationWorkspace({ selected, records, accountList, fixture, keyValue, location, navigate, invalidFixture }) {
+  const [tab, setTab] = useState('summary');
   const [drawer, setDrawer] = useState(null), [viewedId, setViewedId] = useState(null);
   const [error, setError] = useState(''), [failNext, setFailNext] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(backendConnected && !fixture), [historyError, setHistoryError] = useState('');
@@ -95,7 +98,7 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
       navigate(`/intelliops/workflows?case=${encodeURIComponent(result.case_id)}&investigation=${encodeURIComponent(result.investigation_id)}`);
     } catch (e) { setError(e.message); }
   }
-  const onTrace = () => setDrawer({ type: 'trace' });
+  const onTrace = () => setTab('evidence');
   const onInspect = context => setDrawer({ type: 'stage', context });
   const drawerTitle = drawer?.type === 'history' ? 'Investigation History' : drawer?.type === 'trace' ? 'Full Investigation Trace' : drawer?.type === 'stage' ? 'Execution Evidence' : 'Development Case Details';
   return <div className="inv-workspace cc-workspace">
@@ -103,27 +106,43 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
     <div className="page-heading inv-page-heading cc-page-heading"><div><p className="eyebrow">Investigation command center</p><h1>AI Investigation</h1></div><span className="cc-page-purpose">From a detected exception to an evidence-backed finding.</span></div>
     {!selected || invalidFixture ? <><Section title={location.search ? 'Investigation unavailable' : 'No Investigation Selected'} className="inv-empty"><FileSearch size={36}/><p>{location.search ? 'The selected case or development fixture is unavailable in the current dataset.' : 'Choose an exception from Exception Center to begin investigating its underlying cause.'}</p><Link className="inv-button inv-primary" to="/intelliops/exceptions">Browse Exceptions<ArrowRight size={15}/></Link></Section><DevelopmentExamples/></> : <>
       <div className="cc-prototype-note"><FlaskConical size={14}/><strong>{fixture ? `Development fixture · ${fixtureOptions[fixture.fixture]}` : backendConnected ? 'Backend AI investigation' : 'Prototype investigation adapter'}</strong><span>{backendConnected && !fixture ? 'Database evidence · Structured model analysis · Saved investigation history' : 'Deterministic simulation · No live LLM'}</span></div>
-      <header className="inv-case-header cc-case-header"><div className="inv-case-top"><div><div className="cc-case-reference"><span>{selected.id}</span><span className={`cc-severity ${selected.severity?.toUpperCase() === 'HIGH' ? 'cc-high' : ''}`}>{humanize(selected.severity)} severity</span></div><h2>{supported ? 'Potential Duplicate Transaction' : selected.exceptionType}</h2><div className="inv-related">{supported && <><SourceLink reference={original?.id} fixture={fixture?.fixture}/><span className="cc-reference-divider">/</span></>}<SourceLink reference={duplicate?.id || selected.transactionId} fixture={fixture?.fixture}/></div></div><div className="inv-header-actions">{caseDetails}<button className="inv-button cc-history-button" onClick={() => setDrawer({ type: 'history' })}><History size={15}/>View Investigation History</button></div></div><div className="cc-case-footer"><span>Case status <strong>{humanize(selected.status)}</strong></span><span>Investigation <strong>{latest ? humanize(latest.run_status) : 'Ready to investigate'}</strong></span><details><summary>Case metadata</summary><p>Assigned analyst: {selected.assignedTo || 'Unassigned'}</p><p>Detected: {displayTime(selected.createdAt)}</p></details></div></header>
+      <header className="inv-case-header cc-case-header"><div className="inv-case-top"><div><div className="cc-case-reference"><span>{selected.id}</span><span className={`cc-severity ${selected.severity?.toUpperCase() === 'HIGH' ? 'cc-high' : ''}`}>{humanize(selected.severity)} severity</span></div><h2>{supported ? 'Potential Duplicate Transaction' : selected.exceptionType}</h2><div className="inv-related">{supported && <><SourceLink reference={original?.id} fixture={fixture?.fixture}/><span className="cc-reference-divider">/</span></>}<SourceLink reference={duplicate?.id || selected.transactionId} fixture={fixture?.fixture}/></div></div><div className="inv-header-actions">{caseDetails}<button className="inv-button cc-history-button" onClick={() => setTab('history')}><History size={15}/>View Investigation History</button></div></div><div className="cc-case-footer"><span>Case status <strong>{humanize(selected.status)}</strong></span><span>Investigation <strong>{latest ? humanize(latest.run_status) : 'Ready to investigate'}</strong></span><details><summary>Case metadata</summary><p>Assigned analyst: {selected.assignedTo || 'Unassigned'}</p><p>Detected: {displayTime(selected.createdAt)}</p></details></div></header>
       {!supported ? <Section title="Investigation not yet supported"><p>This workspace supports Duplicate Transaction cases. No duplicate findings have been generated for this exception.</p>{caseDetails}</Section> : <>
         {error && <p className="inv-error" role="alert">{error}</p>}
         {historical && <div className="inv-history-banner"><span>Read-only previous report · {viewed.investigation_id}</span><button className="inv-button" onClick={() => setViewedId(null)}>Return to latest report</button></div>}
-        {backendConnected && !fixture && <section className="inv-muted"><p>Saved history is read without calling the model. A new investigation requires an explicit action.</p><button className="inv-button" disabled={historyLoading} onClick={() => refreshHistory()}>Refresh saved history</button>{historyPage.hasMore && <button className="inv-button" disabled={historyLoading} onClick={() => refreshHistory(historyPage.nextOffset)}>Load older investigations</button>}</section>}
-        {historyLoading && <p role="status">Loading saved investigations…</p>}
-        {historyError && <p className="inv-error" role="alert">Saved history unavailable: {historyError}</p>}
-        {!viewed && !historyLoading && <ReadyInvestigation {...{ original, duplicate, accounts: accountList, fixture: fixture?.fixture }} onStart={() => run()}/>}
-        {viewed && !report && <><div className="inv-run-status" role="status">{running ? <LoaderCircle className="inv-spinner" size={17}/> : <TriangleAlert size={17}/>}<span>{humanize(viewed.run_status)} · {viewed.stage_index >= 0 ? stages[viewed.stage_index][0] : 'Waiting to collect evidence'}</span></div><Progress run={viewed}/>{viewed.run_status === 'FAILED' && <Section title="Investigation could not be completed" className="inv-failure"><p role="alert">{viewed.error}</p><p>No diagnosis produced. Your case is unchanged.</p><button className="inv-button inv-primary" onClick={() => run(true)} disabled={running}><RotateCcw size={15}/>Retry Investigation</button></Section>}</>}
+        <div className="iw-tabs" role="tablist" aria-label="Investigation views">{[['summary', 'Summary'], ['evidence', 'Evidence'], ['history', 'History']].map(([id, label], index) => <button key={id} id={`iw-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls={`iw-panel-${id}`} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const ids = ['summary', 'evidence', 'history']; const next = e.key === 'Home' ? 0 : e.key === 'End' ? 2 : (index + (e.key === 'ArrowRight' ? 1 : 2)) % 3; setTab(ids[next]); document.getElementById('iw-tab-' + ids[next])?.focus(); } }}>{label}{id === 'history' && <span>{runs.length}</span>}</button>)}</div>
+        <div role="tabpanel" id={`iw-panel-${tab}`} aria-labelledby={`iw-tab-${tab}`} tabIndex={0}>
         {report && <>
-          {viewed.durable && <div className="inv-history-banner"><span>Saved investigation snapshot · {viewed.stale === true ? 'Current source evidence has changed. Revalidate before action.' : viewed.stale === false ? 'Current evidence matches this snapshot.' : 'Current source comparison unavailable; staleness is unknown.'}</span></div>}
-          <div className="cc-detected-signal"><span>Rule engine alert</span><p>Potential duplicate requests</p><ArrowRight size={14}/><strong>Investigation findings below</strong></div>
-          <DiagnosisHero {...{ report, onTrace }}/><ModelFindings report={report}/>
-          <KeyResults report={report}/>
-          <ExecutionPaths {...{ report, onInspect }}/>
-          <CausalTimeline {...{ report, onTrace, onInspect }}/>
-          <FinancialImpact report={report}/>
-          <EvidenceExplorer {...{ report, onInspect }}/>
-          <NextBestAction {...{ report, historical, running }} onSend={handoff} onRun={() => run()}/>
+          {viewed.durable && <div className={`inv-history-banner ${viewed.stale === true ? 'iw-stale' : viewed.stale == null ? 'iw-freshness-unknown' : ''}`}><span>Saved investigation snapshot · {viewed.stale === true ? 'Current source evidence has changed. Revalidate before action.' : viewed.stale === false ? 'Current evidence matches this snapshot.' : 'Current source comparison unavailable; staleness is unknown.'}</span></div>}
+          <div className="iw-report-meta"><span><CheckCircle2 size={14}/> {humanize(report.validation_status || report.run_status)}</span><span>{displayTime(report.completed_at)}</span><span>Report {report.investigation_id}</span></div>
         </>}
-        {(!backendConnected || fixture) && !running && !historical && <details className="inv-development"><summary>Prototype run controls</summary><label className="inv-checkbox"><input type="checkbox" checked={failNext} onChange={e => setFailNext(e.target.checked)}/>Simulate a ledger evidence timeout on the next new run</label><p>Retry collects a fresh snapshot. Previous runs remain in history.</p></details>}
+        {tab === 'history' && <SavedHistory {...{ runs, latest, viewed }} canRefresh={backendConnected && !fixture} loading={historyLoading} onRefresh={() => refreshHistory()} hasMore={historyPage.hasMore} onMore={() => refreshHistory(historyPage.nextOffset)} onOpen={id => { setViewedId(id); setTab('summary'); }}/>}
+        {historyLoading && <InvestigationSkeleton/>}
+        {historyError && <p className="inv-error" role="alert">Saved history unavailable: {historyError}</p>}
+        {tab === 'evidence' && !report && <Section title="No accepted evidence report"><p>A completed investigation is needed to explore its reasoning and saved sources. Return to Summary to review the investigation status.</p></Section>}
+        {tab === 'summary' && !viewed && !historyLoading && <ReadyInvestigation {...{ original, duplicate, accounts: accountList, fixture: fixture?.fixture }} onStart={() => run()}/>}
+        {tab === 'summary' && viewed && !report && <><div className="inv-run-status" role="status">{running ? <LoaderCircle className="inv-spinner" size={17}/> : <TriangleAlert size={17}/>}<span>{humanize(viewed.run_status)} · {viewed.stage_index >= 0 ? stages[viewed.stage_index][0] : 'Waiting to collect evidence'}</span></div><Progress run={viewed}/>{viewed.run_status === 'FAILED' && <Section title="Investigation could not be completed" className="inv-failure"><p role="alert">{viewed.error}</p><p>No diagnosis produced. Your case is unchanged.</p><button className="inv-button inv-primary" onClick={() => run(true)} disabled={running}><RotateCcw size={15}/>Retry Investigation</button></Section>}</>}
+        {report && <>
+          {tab === 'summary' && <>
+            <div className="iw-summary-grid"><div><DiagnosisHero {...{ report, onTrace }}/><FinancialOverview report={report}/></div><NextBestAction {...{ report, historical, running }} onSend={handoff} onRun={() => run()}/></div>
+            <PaymentRelationshipFlow report={report}/><KeyTimeline report={report} onEvidence={onTrace} {...{ onInspect }}/>
+            <AnalystAttention {...{ report, viewed }}/>
+          </>}
+          {tab === 'evidence' && <>
+            <nav className="iw-evidence-nav" aria-label="Evidence sections">{[['reasoning','AI reasoning'],['execution','Payment Execution'],['events','Timeline'],['ledger','Ledger'],['sources','Sources']].map(([id,label]) => <a key={id} href={'#iw-'+id} onClick={() => { const panel=document.getElementById('iw-'+id); if(panel?.tagName === 'DETAILS') panel.open=true; }}>{label}</a>)}</nav>
+            <div className="iw-evidence-overview"><div><p className="inv-kicker">The evidence behind the finding</p><h2>Verify the investigation</h2><p>Explore source records, financial checks and AI interpretation at your own pace.</p></div><div><strong>{report.supporting_evidence.events.length}</strong><span>source events</span></div><div><strong>{report.supporting_evidence.journals.length}</strong><span>linked journals</span></div></div>
+            <EvidencePanel id="iw-reasoning" title="AI reasoning" subtitle="Original diagnosis, supported findings and unconfirmed hypotheses" open>
+              <section className="inv-section"><p className="inv-kicker">AI interpretation · human review required</p><h2>Why this happened</h2><h3>{report.root_cause_title}</h3><p>{report.root_cause_explanation}</p><details><summary>Classification and uncertainty</summary><p className="inv-kicker">{report.root_cause_code} · {report.diagnosis_classification}</p>{(report.unresolved_questions || []).map((q, i) => <p key={i}>{q}</p>)}</details></section><ModelFindings report={report}/>
+            </EvidencePanel>
+            <EvidencePanel id="iw-execution" title="Payment Execution" subtitle="Compare original and related payment stages · select a stage to inspect its evidence"><ExecutionPaths {...{ report, onInspect }}/></EvidencePanel>
+            <EvidencePanel id="iw-events" title="Processing timeline" subtitle={report.investigation_trace.length + ' recorded events · expandable event details'}><InvestigationTrace report={report}/></EvidencePanel>
+            <EvidencePanel id="iw-ledger" title="Ledger verification & records" subtitle="Financial assessment, payment comparisons and complete source records"><FinancialOverview report={report}/><FinancialImpact report={report}/><EvidenceExplorer {...{ report, onInspect }}/></EvidencePanel>
+            <EvidencePanel id="iw-sources" title="Source evidence explorer" subtitle="Search and inspect the citations supporting this report"><CitationExplorer report={report}/></EvidencePanel>
+            <details className="inv-section iw-raw-report"><summary>Complete saved investigation report</summary><pre>{JSON.stringify(report, null, 2)}</pre></details>
+          </>}
+        </>}
+        </div>
+        {tab === 'summary' && (!backendConnected || fixture) && !running && !historical && <details className="inv-development"><summary>Prototype run controls</summary><label className="inv-checkbox"><input type="checkbox" checked={failNext} onChange={e => setFailNext(e.target.checked)}/>Simulate a ledger evidence timeout on the next new run</label><p>Retry collects a fresh snapshot. Previous runs remain in history.</p></details>}
       </>}
       <RecordDrawer open={Boolean(drawer)} title={drawerTitle} onClose={() => setDrawer(null)}>
         {drawer?.type === 'stage' && <StageDetails context={drawer.context}/>}

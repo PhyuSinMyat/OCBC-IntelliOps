@@ -6,6 +6,14 @@ export const actionPresentation = {
   ESCALATE_FOR_PAYMENT_VERIFICATION: ['Escalate for payment verification', 'Obtain additional evidence when intent or execution is uncertain. No closure or financial change.'],
 };
 
+export function conclusionPresentation(report) {
+  const classification = report.financial_execution_assessment.classification;
+  if (report.diagnosis_classification === 'LEGITIMATE_SEPARATE_INSTRUCTIONS') return ['Separate payment instructions', 'The investigation classifies these requests as independently authorized instructions. Review the authorization evidence alongside the verified financial postings.'];
+  if (report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST' && classification === 'SINGLE_POSTING_CONFIRMED') return ['Repeated request held before execution', 'The report identifies a shared payment instruction. One financial posting is verified, and the repeated request was held before execution.'];
+  if (report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST' && classification === 'DOUBLE_POSTING_CONFIRMED') return ['Duplicate financial execution needs review', 'The report identifies a shared instruction with two verified financial postings. Review the source evidence and proposed escalation before any action.'];
+  return [report.root_cause_title, 'Review the recorded diagnosis and source evidence. The available financial assessment does not establish a complete outcome.'];
+}
+
 export function resultSummary(report) {
   const same = report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST';
   const separate = report.diagnosis_classification === 'LEGITIMATE_SEPARATE_INSTRUCTIONS';

@@ -8,6 +8,13 @@ from .investigation_schemas import ACTION_TITLES
 
 
 def investigate(evidence, provider):
+    if evidence.get('snapshot', {}).get('caseRecord', {}).get('exceptionType') in {'Amount Mismatch', 'AMOUNT_MISMATCH'}:
+        from .investigation_amount import investigate_amount
+        return investigate_amount(evidence, provider)
+    return investigate_duplicate(evidence, provider)
+
+
+def investigate_duplicate(evidence, provider):
     started = datetime.now(timezone.utc).isoformat()
     model_input = model_evidence(evidence)
     model_result, model = provider.analyze(model_input)

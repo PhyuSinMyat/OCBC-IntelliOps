@@ -4,10 +4,18 @@ export const actionPresentation = {
   ESCALATE_DUPLICATE_FINANCIAL_EXECUTION: ['Escalate duplicate financial execution for review', 'Shared instruction with two verified postings. Human review; no automatic financial correction.'],
   REVIEW_FALSE_POSITIVE_CLOSURE: ['Review false-positive closure', 'Independently authorized separate instructions with two verified postings. Human closure review only.'],
   ESCALATE_FOR_PAYMENT_VERIFICATION: ['Escalate for payment verification', 'Obtain additional evidence when intent or execution is uncertain. No closure or financial change.'],
+  REVIEW_SHORTFALL_ADJUSTMENT: ['Review posting shortfall adjustment', 'The posted amount is below the instruction. Review the verified difference before any adjustment.'],
+  REVIEW_OVERPOSTING_CORRECTION: ['Review excess posting correction', 'The posted amount exceeds the instruction. Escalate for controlled correction review; no automatic reversal.'],
+  ESCALATE_FOR_AMOUNT_VERIFICATION: ['Escalate for amount verification', 'Obtain complete aligned journal evidence before proposing a correction.'],
 };
 
 export function conclusionPresentation(report) {
   const classification = report.financial_execution_assessment.classification;
+  if (report.exception_type === 'AMOUNT_MISMATCH') {
+    if (classification === 'UNDERPOSTING_CONFIRMED') return ['Posting shortfall confirmed', 'A valid aligned journal posted less than the payment instruction. Review the verified difference and cause evidence before remediation.'];
+    if (classification === 'OVERPOSTING_CONFIRMED') return ['Excess posting confirmed', 'A valid aligned journal posted more than the payment instruction. Controlled correction review is required.'];
+    if (classification === 'AMOUNT_MATCH_CONFIRMED') return ['Amounts currently match', 'Current aligned journal totals match the payment instruction. Review whether the alert can be closed as a false positive.'];
+  }
   if (report.diagnosis_classification === 'LEGITIMATE_SEPARATE_INSTRUCTIONS') return ['Separate payment instructions', 'The investigation classifies these requests as independently authorized instructions. Review the authorization evidence alongside the verified financial postings.'];
   if (report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST' && classification === 'SINGLE_POSTING_CONFIRMED') return ['Repeated request held before execution', 'The report identifies a shared payment instruction. One financial posting is verified, and the repeated request was held before execution.'];
   if (report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST' && classification === 'DOUBLE_POSTING_CONFIRMED') return ['Duplicate financial execution needs review', 'The report identifies a shared instruction with two verified financial postings. Review the source evidence and proposed escalation before any action.'];
@@ -15,6 +23,18 @@ export function conclusionPresentation(report) {
 }
 
 export function resultSummary(report) {
+  if (report.exception_type === 'AMOUNT_MISMATCH') {
+    const f = report.financial_impact || {}, classification = report.financial_execution_assessment.classification;
+    const financial = classification === 'UNDERPOSTING_CONFIRMED' ? ['Posting shortfall confirmed', `${f.postedAmount ?? 'Unknown'} posted against ${f.expectedAmount ?? 'unknown'} expected.`, 'danger'] :
+      classification === 'OVERPOSTING_CONFIRMED' ? ['Excess posting confirmed', `${f.postedAmount ?? 'Unknown'} posted against ${f.expectedAmount ?? 'unknown'} expected.`, 'danger'] :
+      classification === 'AMOUNT_MATCH_CONFIRMED' ? ['Amounts match', 'Aligned journal totals match the payment instruction.', 'positive'] :
+      ['Execution outcome unknown', 'Complete aligned journal evidence is unavailable.', 'caution'];
+    const identified = report.root_cause_status === 'MODEL_HYPOTHESIS';
+    return { identified, same: false, separate: false, timeout: false,
+      explanation: report.root_cause_explanation,
+      relationship: ['Instruction-to-ledger reconciliation', `Difference: ${f.difference ?? 'not established'} ${report.supporting_evidence.original?.currency || ''}`.trim(), classification === 'EXECUTION_OUTCOME_UNKNOWN' ? 'caution' : 'neutral'],
+      cause: [identified ? report.root_cause_title : 'Root cause not established', report.root_cause_explanation, 'caution'], financial };
+  }
   const same = report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST';
   const separate = report.diagnosis_classification === 'LEGITIMATE_SEPARATE_INSTRUCTIONS';
   const timeout = report.root_cause_code === 'CLIENT_RETRY_ACK_TIMEOUT';
@@ -56,7 +76,7 @@ export const eventLabel = type => stageNames[type] || String(type || 'Source eve
 export function eventContext(report, event) {
   const payment = report.payment_comparison.find(p => p?.id === event.paymentId);
   const f = report.financial_execution_assessment;
-  const assessment = event.paymentId === f.original.payment_ref ? f.original : event.paymentId === f.duplicate.payment_ref ? f.duplicate : null;
+  const assessment = event.paymentId === f.original?.payment_ref ? f.original : event.paymentId === f.duplicate?.payment_ref ? f.duplicate : null;
   return { node: { kind: 'event', event, title: eventLabel(event.eventType), at: event.occurredAt,
     journalRefs: event.eventType === 'LEDGER_POSTED' ? assessment?.valid_journals || [] : [] }, payment, report };
 }
@@ -85,6 +105,11 @@ export function paymentPath(report, side) {
 
 export function causalEvents(report) {
   const events = report.investigation_trace;
+  if (report.exception_type === 'AMOUNT_MISMATCH') {
+    const cited = new Set(report.root_cause_evidence_refs || []);
+    const selected = events.filter(event => cited.has(`event:${event.id}`));
+    return (selected.length ? selected : events).sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));
+  }
   const s = report.supporting_evidence;
   const result = [];
   const add = event => { if (event && !result.some(e => e.id === event.id)) result.push(event); };

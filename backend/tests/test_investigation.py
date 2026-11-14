@@ -126,7 +126,7 @@ class InvestigationTests(unittest.TestCase):
         self.fixture()
         self.assertEqual(self.client.get("/api/exceptions/CASE-999999/investigation-evidence").status_code, 404)
         with Session(self.engine) as db, db.begin():
-            db.get(ExceptionCase, 4).exception_type = "Amount Mismatch"
+            db.get(ExceptionCase, 4).exception_type = "Missing Ledger Posting"
         self.assertEqual(self.run_case().status_code, 409)
 
     def test_provider_failures_have_no_fallback_or_writes(self):

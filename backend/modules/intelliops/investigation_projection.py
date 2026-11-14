@@ -100,7 +100,8 @@ def financial_verification(evidence):
     execution_fields = ('payment_ref', 'execution', 'journals', 'valid_journals', 'payment_status', 'processing_state', 'reason')
     impact = evidence.get('financial_impact', {})
     totals = pick(impact, ('completedPaymentCount', 'confirmedPostedJournalCount', 'validDebitTotals', 'validCreditTotals',
-        'accountMovements', 'senderFinancialMovement', 'receiverFinancialMovement', 'journalValidation', 'requestHistoryComplete'))
+        'accountMovements', 'senderFinancialMovement', 'receiverFinancialMovement', 'journalValidation', 'requestHistoryComplete',
+        'expectedAmount', 'postedAmount', 'difference', 'absoluteDifference', 'tolerance'))
     movement_fields = ('accountReference', 'currency', 'debit', 'credit', 'net')
     totals['accountMovements'] = [pick(r, movement_fields) for r in impact.get('accountMovements', [])]
     for side in ('senderFinancialMovement', 'receiverFinancialMovement'):

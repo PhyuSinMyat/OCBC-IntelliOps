@@ -7,6 +7,7 @@ from modules.core_banking.router import get_db
 from shared.security import actor
 from .service import CaseError
 from .investigation_evidence import retrieve_evidence
+from .investigation_amount import retrieve_amount_evidence
 from .investigation_llm import get_investigation_provider
 from .investigation_service import investigate
 from .investigation_schemas import InvestigationEvidenceOut, InvestigationHistoryOut
@@ -22,7 +23,8 @@ def collect(db, case_id):
     # On PostgreSQL enforce repeatable-read/read-only before the first source query.
     if db.bind.dialect.name == "postgresql":
         db.connection(execution_options={"isolation_level": "REPEATABLE READ", "postgresql_readonly": True})
-    evidence = retrieve_evidence(db, case_id)
+    case = get_case(db, case_id)
+    evidence = retrieve_amount_evidence(db, case_id) if case.exception_type in {'Amount Mismatch', 'AMOUNT_MISMATCH'} else retrieve_evidence(db, case_id)
     evidence["retrieved_at"] = datetime.now(timezone.utc).isoformat()
     db.rollback()  # Release source snapshot/connection before the external LLM call.
     return evidence

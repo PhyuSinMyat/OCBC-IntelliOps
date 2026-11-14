@@ -5,6 +5,9 @@ from pydantic import BaseModel, ConfigDict, Field
 Diagnosis = Literal["CONFIRMED_DUPLICATE_REQUEST", "LEGITIMATE_SEPARATE_INSTRUCTIONS", "SUSPECTED_DUPLICATE", "INSUFFICIENT_EVIDENCE"]
 Financial = Literal["SINGLE_POSTING_CONFIRMED", "DOUBLE_POSTING_CONFIRMED", "NO_POSTING_CONFIRMED", "EXECUTION_OUTCOME_UNKNOWN"]
 Action = Literal["CLOSE_HELD_DUPLICATE", "ESCALATE_DUPLICATE_FINANCIAL_EXECUTION", "REVIEW_FALSE_POSITIVE_CLOSURE", "ESCALATE_FOR_PAYMENT_VERIFICATION"]
+AmountDiagnosis = Literal["CONFIRMED_AMOUNT_MISMATCH", "NO_AMOUNT_MISMATCH", "INSUFFICIENT_EVIDENCE"]
+AmountFinancial = Literal["UNDERPOSTING_CONFIRMED", "OVERPOSTING_CONFIRMED", "AMOUNT_MATCH_CONFIRMED", "EXECUTION_OUTCOME_UNKNOWN"]
+AmountAction = Literal["REVIEW_SHORTFALL_ADJUSTMENT", "REVIEW_OVERPOSTING_CORRECTION", "REVIEW_FALSE_POSITIVE_CLOSURE", "ESCALATE_FOR_AMOUNT_VERIFICATION"]
 ACTION_MEANINGS = {
     'CLOSE_HELD_DUPLICATE': 'Propose human closure review of a confirmed duplicate request: shared instruction, one verified posting and a repeat held before execution. No automatic case closure.',
     'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION': 'Propose human review of confirmed shared-instruction duplicate execution with two verified postings. Two postings alone do not prove an unintended duplicate. No automatic financial correction.',
@@ -17,6 +20,9 @@ ACTION_TITLES = {
     'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION': 'Escalate duplicate financial execution for review',
     'REVIEW_FALSE_POSITIVE_CLOSURE': 'Review false-positive closure',
     'ESCALATE_FOR_PAYMENT_VERIFICATION': 'Escalate for payment verification',
+    'REVIEW_SHORTFALL_ADJUSTMENT': 'Review posting shortfall adjustment',
+    'REVIEW_OVERPOSTING_CORRECTION': 'Review excess posting correction',
+    'ESCALATE_FOR_AMOUNT_VERIFICATION': 'Escalate for amount verification',
 }
 
 
@@ -39,6 +45,22 @@ class ModelInvestigation(BaseModel):
     uncertainty: list[str] = Field(min_length=1, max_length=12)
     recommended_action_code: Action = Field(description='Review-only proposals, never execution authority. ' + ACTION_INSTRUCTIONS)
     recommendation_reason: str = Field(min_length=1, max_length=1600, description='Explain how cited source evidence supports the proposed review action. For verification escalation identify the material unresolved evidence, distinguishing unknown customer motivation from missing or conflicting authorization. Do not merely repeat the diagnosis or action label.')
+
+
+class AmountMismatchModelInvestigation(BaseModel):
+    """Strict model output for one payment reconciled against aligned journals."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+    diagnosis_classification: AmountDiagnosis
+    root_cause_code: str = Field(min_length=1, max_length=80, pattern=r'^[A-Z][A-Z0-9_]*$')
+    root_cause_title: str = Field(min_length=1, max_length=240)
+    root_cause_explanation: str = Field(min_length=1, max_length=2000)
+    root_cause_evidence_refs: list[str] = Field(max_length=30)
+    financial_classification: AmountFinancial
+    facts: list[EvidenceClaim] = Field(min_length=1, max_length=12)
+    hypotheses: list[EvidenceClaim] = Field(max_length=8)
+    uncertainty: list[str] = Field(min_length=1, max_length=12)
+    recommended_action_code: AmountAction
+    recommendation_reason: str = Field(min_length=1, max_length=1600)
 
 
 class SourceEventData(BaseModel):

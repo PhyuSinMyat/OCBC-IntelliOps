@@ -5,11 +5,26 @@ import { analyzeSnapshot, evidenceSnapshot } from './analysis.js';
 import { actionPresentation, causalEvents, eventContext, paymentPath, resultSummary } from './presentation.js';
 
 test('action labels are review proposals and distinguish held duplicates from false positives', () => {
-  assert.deepEqual(Object.keys(actionPresentation).sort(), ['CLOSE_HELD_DUPLICATE', 'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION', 'ESCALATE_FOR_PAYMENT_VERIFICATION', 'REVIEW_FALSE_POSITIVE_CLOSURE'].sort());
+  assert.deepEqual(Object.keys(actionPresentation).sort(), ['CLOSE_HELD_DUPLICATE', 'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION',
+    'ESCALATE_FOR_PAYMENT_VERIFICATION', 'REVIEW_FALSE_POSITIVE_CLOSURE', 'REVIEW_SHORTFALL_ADJUSTMENT',
+    'REVIEW_OVERPOSTING_CORRECTION', 'ESCALATE_FOR_AMOUNT_VERIFICATION'].sort());
   assert.equal(actionPresentation.CLOSE_HELD_DUPLICATE[0], 'Review held-duplicate closure');
   assert.match(actionPresentation.CLOSE_HELD_DUPLICATE[1], /held repeat/);
   assert.match(actionPresentation.REVIEW_FALSE_POSITIVE_CLOSURE[1], /Independently authorized separate instructions/);
   assert.match(actionPresentation.ESCALATE_FOR_PAYMENT_VERIFICATION[1], /No closure or financial change/);
+  assert.match(actionPresentation.REVIEW_SHORTFALL_ADJUSTMENT[1], /verified difference/);
+});
+
+test('amount mismatch summary presents deterministic reconciliation without duplicate language', () => {
+  const report = { exception_type: 'AMOUNT_MISMATCH', root_cause_status: 'MODEL_HYPOTHESIS',
+    root_cause_title: 'Partial settlement', root_cause_explanation: 'A cited event records partial settlement.',
+    supporting_evidence: { original: { currency: 'SGD' } },
+    financial_execution_assessment: { classification: 'UNDERPOSTING_CONFIRMED' },
+    financial_impact: { expectedAmount: '100.00', postedAmount: '50.00', difference: '-50.00' } };
+  const summary = resultSummary(report);
+  assert.equal(summary.financial[0], 'Posting shortfall confirmed');
+  assert.equal(summary.financial[2], 'danger');
+  assert.match(summary.relationship[1], /-50.00 SGD/);
 });
 
 test('backend financial summary does not turn two journals into an erroneous duplicate diagnosis', () => {

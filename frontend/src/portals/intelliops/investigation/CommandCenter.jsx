@@ -21,6 +21,26 @@ export function ReadyInvestigation({ original, duplicate, accounts, fixture, onS
   </>;
 }
 
+export function ReadyAmountInvestigation({ payment, accounts, fixture, onStart }) {
+  return <>
+    <section className="cc-ready" aria-labelledby="cc-detected"><div className="cc-section-heading"><div><p className="inv-kicker">Detected by the rule engine</p><h2 id="cc-detected">Instruction and ledger amount differ</h2></div><span className="cc-tag">Amount mismatch</span></div><p>The payment instruction and its aligned ledger journal require evidence-backed reconciliation.</p>
+      <div className="cc-request-pair"><article className="cc-request"><div className="cc-request-label"><span>Payment under review</span><span>{payment?.status || 'Unavailable'}</span></div><h3><SourceLink reference={payment?.id} fixture={fixture}/></h3><div className="cc-parties"><span>{person(accounts, payment?.senderId)}</span><ArrowRight size={15}/><span>{person(accounts, payment?.receiverId)}</span></div><strong className="cc-payment-amount">{amount(payment)}</strong></article></div>
+    </section>
+    <section className="cc-objectives" aria-labelledby="cc-objectives-title"><h2 id="cc-objectives-title">What AI will investigate</h2><div className="cc-objective-grid">{[
+      [Wallet, 'Amount Reconciliation', 'What amount was instructed, posted and left as a difference?'],
+      [GitBranch, 'Mismatch Cause', 'Which operational event best explains the transformation?'],
+      [ShieldCheck, 'Safe Review Action', 'Which human review path matches the verified financial facts?'],
+    ].map(([Icon, title, text], i) => <article key={title}><span className="cc-objective-icon"><Icon size={20}/></span><small>0{i + 1}</small><h3>{title}</h3><p>{text}</p></article>)}</div></section>
+    <div className="cc-start"><div><strong>Reconcile the instruction to the ledger.</strong><p>Analyze processing events and verified aligned journal entries.</p></div><button className="inv-button inv-primary" onClick={onStart}><FileSearch size={17}/>Start AI Investigation<ArrowRight size={16}/></button></div>
+  </>;
+}
+
+export function AmountReconciliation({ report }) {
+  const f = report.financial_impact || {}, currency = report.supporting_evidence.original?.currency || '';
+  const rows = [['Expected instruction', f.expectedAmount], ['Verified posted amount', f.postedAmount], ['Signed difference', f.difference], ['Absolute difference', f.absoluteDifference], ['Detection tolerance', f.tolerance]];
+  return <section className="cc-financial" aria-labelledby="cc-amount-title"><div className="cc-financial-heading"><Wallet size={23}/><div><h2 id="cc-amount-title">Amount reconciliation</h2><h3>{humanize(report.financial_execution_assessment.classification)}</h3></div></div><div className="inv-table-scroll"><table className="inv-table"><tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value == null ? 'Not established' : `${currency} ${value}`}</td></tr>)}</tbody></table></div><p>{report.financial_execution_assessment.explanation}</p><small className="inv-muted">Debit and credit were validated as balanced accounting sides. The difference compares one verified debit total with the payment instruction.</small></section>;
+}
+
 export function DiagnosisHero({ report, onTrace }) {
   const [title, explanation] = conclusionPresentation(report);
   const v = resultSummary(report);

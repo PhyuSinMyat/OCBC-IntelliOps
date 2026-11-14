@@ -56,6 +56,12 @@ def validate_monetary_claims(result, model_input):
     for key in ('validDebitTotals', 'validCreditTotals'):
         for currency, amount in financial.get(key, {}).items():
             add(currency, amount)
+    payment_currencies = {payment['currency'] for payment in (s['original'], s['duplicate']) if payment}
+    if len(payment_currencies) == 1:
+        currency = next(iter(payment_currencies))
+        for key in ('expectedAmount', 'postedAmount', 'difference', 'absoluteDifference', 'tolerance'):
+            if financial.get(key) is not None:
+                add(currency, financial[key])
     for movement in financial.get('accountMovements', []):
         for key in ('debit', 'credit', 'net'):
             add(movement['currency'], movement[key])

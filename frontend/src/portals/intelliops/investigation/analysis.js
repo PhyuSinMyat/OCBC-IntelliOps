@@ -7,6 +7,8 @@ export const stages = [
   ['Preparing Investigation Report', 'Save an evidence snapshot and a proposed next action.'],
 ];
 export const isDuplicate = c => ['DUPLICATE_TRANSACTION', 'Duplicate Transaction'].includes(c?.exceptionType);
+export const isAmountMismatch = c => ['AMOUNT_MISMATCH', 'Amount Mismatch'].includes(c?.exceptionType);
+export const isInvestigable = c => isDuplicate(c) || isAmountMismatch(c);
 export function relatedPayments(c, records) {
   const payments = records.payment_transactions || [];
   const duplicate = payments.find(p => p.id === c.transactionId);

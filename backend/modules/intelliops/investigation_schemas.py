@@ -8,6 +8,9 @@ Action = Literal["CLOSE_HELD_DUPLICATE", "ESCALATE_DUPLICATE_FINANCIAL_EXECUTION
 AmountDiagnosis = Literal["CONFIRMED_AMOUNT_MISMATCH", "NO_AMOUNT_MISMATCH", "INSUFFICIENT_EVIDENCE"]
 AmountFinancial = Literal["UNDERPOSTING_CONFIRMED", "OVERPOSTING_CONFIRMED", "AMOUNT_MATCH_CONFIRMED", "EXECUTION_OUTCOME_UNKNOWN"]
 AmountAction = Literal["REVIEW_SHORTFALL_ADJUSTMENT", "REVIEW_OVERPOSTING_CORRECTION", "REVIEW_FALSE_POSITIVE_CLOSURE", "ESCALATE_FOR_AMOUNT_VERIFICATION"]
+MissingDiagnosis = Literal["CONFIRMED_MISSING_POSTING", "POSTING_RECORD_PRESENT", "INSUFFICIENT_EVIDENCE"]
+MissingFinancial = Literal["NO_POSTING_RECORD_CONFIRMED", "POSTING_RECORD_PRESENT", "EXECUTION_OUTCOME_UNKNOWN"]
+MissingAction = Literal["REVIEW_MISSING_POSTING_REMEDIATION", "REVIEW_FALSE_POSITIVE_CLOSURE", "ESCALATE_FOR_LEDGER_VERIFICATION"]
 ACTION_MEANINGS = {
     'CLOSE_HELD_DUPLICATE': 'Propose human closure review of a confirmed duplicate request: shared instruction, one verified posting and a repeat held before execution. No automatic case closure.',
     'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION': 'Propose human review of confirmed shared-instruction duplicate execution with two verified postings. Two postings alone do not prove an unintended duplicate. No automatic financial correction.',
@@ -23,6 +26,8 @@ ACTION_TITLES = {
     'REVIEW_SHORTFALL_ADJUSTMENT': 'Review posting shortfall adjustment',
     'REVIEW_OVERPOSTING_CORRECTION': 'Review excess posting correction',
     'ESCALATE_FOR_AMOUNT_VERIFICATION': 'Escalate for amount verification',
+    'REVIEW_MISSING_POSTING_REMEDIATION': 'Review missing-posting remediation',
+    'ESCALATE_FOR_LEDGER_VERIFICATION': 'Escalate for ledger verification',
 }
 
 
@@ -60,6 +65,22 @@ class AmountMismatchModelInvestigation(BaseModel):
     hypotheses: list[EvidenceClaim] = Field(max_length=8)
     uncertainty: list[str] = Field(min_length=1, max_length=12)
     recommended_action_code: AmountAction
+    recommendation_reason: str = Field(min_length=1, max_length=1600)
+
+
+class MissingLedgerModelInvestigation(BaseModel):
+    """Strict model output for one completed payment checked for ledger evidence."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+    diagnosis_classification: MissingDiagnosis
+    root_cause_code: str = Field(min_length=1, max_length=80, pattern=r'^[A-Z][A-Z0-9_]*$')
+    root_cause_title: str = Field(min_length=1, max_length=240)
+    root_cause_explanation: str = Field(min_length=1, max_length=2000)
+    root_cause_evidence_refs: list[str] = Field(max_length=30)
+    financial_classification: MissingFinancial
+    facts: list[EvidenceClaim] = Field(min_length=1, max_length=12)
+    hypotheses: list[EvidenceClaim] = Field(max_length=8)
+    uncertainty: list[str] = Field(min_length=1, max_length=12)
+    recommended_action_code: MissingAction
     recommendation_reason: str = Field(min_length=1, max_length=1600)
 
 

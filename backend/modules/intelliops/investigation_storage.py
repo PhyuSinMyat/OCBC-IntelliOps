@@ -136,7 +136,7 @@ def history(db, case_id, limit=20, offset=0, investigation_id=None):
 def import_accepted_report(db, saved, role='ADMIN'):
     """Explicit administrative import, locally revalidated; NEVER calls OpenAI."""
     from uuid import uuid5, NAMESPACE_URL
-    from .investigation_schemas import ModelInvestigation, AmountMismatchModelInvestigation
+    from .investigation_schemas import ModelInvestigation, AmountMismatchModelInvestigation, MissingLedgerModelInvestigation
     from .investigation_service import investigate
     require_enabled()
     if saved.get('prototype') is not False or saved.get('run_status') != 'COMPLETED':
@@ -146,7 +146,8 @@ def import_accepted_report(db, saved, role='ADMIN'):
         evidence_references=saved['evidence_references'], retrieved_at=saved['evidence_snapshot_at'],
         verified_assessment=dict(financial_classification=financial['classification'],
                                  original=financial['original'], duplicate=financial['duplicate']))
-    schema = AmountMismatchModelInvestigation if saved.get('exception_type') == 'AMOUNT_MISMATCH' else ModelInvestigation
+    schema = (AmountMismatchModelInvestigation if saved.get('exception_type') == 'AMOUNT_MISMATCH' else
+              MissingLedgerModelInvestigation if saved.get('exception_type') == 'MISSING_LEDGER_POSTING' else ModelInvestigation)
     candidate = schema.model_validate(saved['llm_analysis'])
     class SavedAnalysis:
         def analyze(self, data): return candidate, saved['model']

@@ -41,6 +41,30 @@ export function AmountReconciliation({ report }) {
   return <section className="cc-financial" aria-labelledby="cc-amount-title"><div className="cc-financial-heading"><Wallet size={23}/><div><h2 id="cc-amount-title">Amount reconciliation</h2><h3>{humanize(report.financial_execution_assessment.classification)}</h3></div></div><div className="inv-table-scroll"><table className="inv-table"><tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value == null ? 'Not established' : `${currency} ${value}`}</td></tr>)}</tbody></table></div><p>{report.financial_execution_assessment.explanation}</p><small className="inv-muted">Debit and credit were validated as balanced accounting sides. The difference compares one verified debit total with the payment instruction.</small></section>;
 }
 
+export function ReadyMissingLedgerInvestigation({ payment, accounts, fixture, onStart }) {
+  return <>
+    <section className="cc-ready" aria-labelledby="cc-detected"><div className="cc-section-heading"><div><p className="inv-kicker">Detected by the rule engine</p><h2 id="cc-detected">Completed payment without a ledger record</h2></div><span className="cc-tag">Missing posting</span></div><p>The source payment reports completion, but current reconciliation found no corresponding journal.</p>
+      <div className="cc-request-pair"><article className="cc-request"><div className="cc-request-label"><span>Payment under review</span><span>{payment?.status || 'Unavailable'}</span></div><h3><SourceLink reference={payment?.id} fixture={fixture}/></h3><div className="cc-parties"><span>{person(accounts, payment?.senderId)}</span><ArrowRight size={15}/><span>{person(accounts, payment?.receiverId)}</span></div><strong className="cc-payment-amount">{amount(payment)}</strong></article></div>
+    </section>
+    <section className="cc-objectives" aria-labelledby="cc-objectives-title"><h2 id="cc-objectives-title">What AI will investigate</h2><div className="cc-objective-grid">{[
+      [Wallet, 'Ledger Reconciliation', 'Is the posting still absent from both modern and legacy records?'],
+      [GitBranch, 'Failure Mechanism', 'Did publication, ledger rollback or consumer delivery fail?'],
+      [ShieldCheck, 'Safe Review Action', 'Should remediation be reviewed, or has a late posting made the alert stale?'],
+    ].map(([Icon, title, text], i) => <article key={title}><span className="cc-objective-icon"><Icon size={20}/></span><small>0{i + 1}</small><h3>{title}</h3><p>{text}</p></article>)}</div></section>
+    <div className="cc-start"><div><strong>Trace the missing posting safely.</strong><p>Analyze source completion, delivery events and current ledger evidence.</p></div><button className="inv-button inv-primary" onClick={onStart}><FileSearch size={17}/>Start AI Investigation<ArrowRight size={16}/></button></div>
+  </>;
+}
+
+export function MissingLedgerVerification({ report }) {
+  const f = report.financial_impact || {}, currency = report.supporting_evidence.original?.currency || '';
+  const rows = [['Expected payment amount', f.expectedAmount == null ? null : `${currency} ${f.expectedAmount}`],
+    ['Linked modern journals', f.linkedJournalCount], ['Legacy posting records', f.legacyRecordCount],
+    ['Payment completion verified', f.paymentCompletionVerified ? 'Yes' : 'No'],
+    ['Instruction completion verified', f.instructionCompletionVerified ? 'Yes' : 'No'],
+    ['Posting record absent', f.postingRecordAbsent ? 'Yes' : 'No']];
+  return <section className="cc-financial" aria-labelledby="cc-missing-title"><div className="cc-financial-heading"><Wallet size={23}/><div><h2 id="cc-missing-title">Ledger record verification</h2><h3>{humanize(report.financial_execution_assessment.classification)}</h3></div></div><div className="inv-table-scroll"><table className="inv-table"><tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value == null ? 'Not established' : String(value)}</td></tr>)}</tbody></table></div><p>{report.financial_execution_assessment.explanation}</p><small className="inv-muted">Record absence is a bounded snapshot fact. Current and legacy ledgers must be checked again immediately before any remediation.</small></section>;
+}
+
 export function DiagnosisHero({ report, onTrace }) {
   const [title, explanation] = conclusionPresentation(report);
   const v = resultSummary(report);

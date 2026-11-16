@@ -8,7 +8,8 @@ export const stages = [
 ];
 export const isDuplicate = c => ['DUPLICATE_TRANSACTION', 'Duplicate Transaction'].includes(c?.exceptionType);
 export const isAmountMismatch = c => ['AMOUNT_MISMATCH', 'Amount Mismatch'].includes(c?.exceptionType);
-export const isInvestigable = c => isDuplicate(c) || isAmountMismatch(c);
+export const isMissingLedger = c => ['MISSING_LEDGER_POSTING', 'Missing Ledger Posting'].includes(c?.exceptionType);
+export const isInvestigable = c => isDuplicate(c) || isAmountMismatch(c) || isMissingLedger(c);
 export function relatedPayments(c, records) {
   const payments = records.payment_transactions || [];
   const duplicate = payments.find(p => p.id === c.transactionId);

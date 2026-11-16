@@ -11,6 +11,9 @@ def investigate(evidence, provider):
     if evidence.get('snapshot', {}).get('caseRecord', {}).get('exceptionType') in {'Amount Mismatch', 'AMOUNT_MISMATCH'}:
         from .investigation_amount import investigate_amount
         return investigate_amount(evidence, provider)
+    if evidence.get('snapshot', {}).get('caseRecord', {}).get('exceptionType') in {'Missing Ledger Posting', 'MISSING_LEDGER_POSTING'}:
+        from .investigation_missing import investigate_missing
+        return investigate_missing(evidence, provider)
     return investigate_duplicate(evidence, provider)
 
 

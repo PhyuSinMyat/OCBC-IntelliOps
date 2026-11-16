@@ -1,4 +1,4 @@
-import { analyzeSnapshot, evidenceSnapshot, isAmountMismatch, isInvestigable, stages } from './analysis.js';
+import { analyzeSnapshot, evidenceSnapshot, isAmountMismatch, isInvestigable, isMissingLedger, stages } from './analysis.js';
 import { exceptionRequest } from '../../../shared/api/banking.js';
 
 const storageKey = 'intelliops-investigations-prototype-v2';
@@ -52,9 +52,10 @@ export async function loadPersistedInvestigations(key, caseId, { offset = 0 } = 
 }
 
 export async function startInvestigation({ key, caseRecord, records, accounts, fixture, failEvidence = false, mode }) {
-  if (!isInvestigable(caseRecord)) throw new Error('AI investigation supports Duplicate Transaction and Amount Mismatch cases.');
+  if (!isInvestigable(caseRecord)) throw new Error('AI investigation supports Duplicate Transaction, Amount Mismatch and Missing Ledger Posting cases.');
   if (!['backend', 'prototype'].includes(mode)) throw new Error('Select an explicit backend or prototype investigation mode.');
   if (isAmountMismatch(caseRecord) && mode !== 'backend') throw new Error('Amount Mismatch investigation requires the backend evidence collector.');
+  if (isMissingLedger(caseRecord) && mode !== 'backend') throw new Error('Missing Ledger Posting investigation requires the backend evidence collector.');
   if (getRuns(key).some(r => activeStatuses.includes(r.run_status))) throw new Error('An investigation is already running for this case.');
   if (mode === 'backend') return startBackendInvestigation(key, caseRecord);
   const now = new Date().toISOString();

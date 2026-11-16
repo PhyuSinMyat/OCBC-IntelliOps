@@ -102,6 +102,8 @@ def financial_verification(evidence):
     totals = pick(impact, ('completedPaymentCount', 'confirmedPostedJournalCount', 'validDebitTotals', 'validCreditTotals',
         'accountMovements', 'senderFinancialMovement', 'receiverFinancialMovement', 'journalValidation', 'requestHistoryComplete',
         'expectedAmount', 'postedAmount', 'difference', 'absoluteDifference', 'tolerance'))
+    totals.update(pick(impact, ('linkedJournalCount', 'legacyRecordCount', 'paymentCompletionVerified',
+                                'instructionCompletionVerified', 'postingRecordAbsent')))
     movement_fields = ('accountReference', 'currency', 'debit', 'credit', 'net')
     totals['accountMovements'] = [pick(r, movement_fields) for r in impact.get('accountMovements', [])]
     for side in ('senderFinancialMovement', 'receiverFinancialMovement'):

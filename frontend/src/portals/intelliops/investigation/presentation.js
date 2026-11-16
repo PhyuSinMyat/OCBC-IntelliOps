@@ -7,6 +7,8 @@ export const actionPresentation = {
   REVIEW_SHORTFALL_ADJUSTMENT: ['Review posting shortfall adjustment', 'The posted amount is below the instruction. Review the verified difference before any adjustment.'],
   REVIEW_OVERPOSTING_CORRECTION: ['Review excess posting correction', 'The posted amount exceeds the instruction. Escalate for controlled correction review; no automatic reversal.'],
   ESCALATE_FOR_AMOUNT_VERIFICATION: ['Escalate for amount verification', 'Obtain complete aligned journal evidence before proposing a correction.'],
+  REVIEW_MISSING_POSTING_REMEDIATION: ['Review missing-posting remediation', 'No posting record exists in the bounded snapshot. Recheck current and legacy ledgers before any posting.'],
+  ESCALATE_FOR_LEDGER_VERIFICATION: ['Escalate for ledger verification', 'Source or ledger evidence is incomplete. Verify current state before proposing remediation.'],
 };
 
 export function conclusionPresentation(report) {
@@ -15,6 +17,10 @@ export function conclusionPresentation(report) {
     if (classification === 'UNDERPOSTING_CONFIRMED') return ['Posting shortfall confirmed', 'A valid aligned journal posted less than the payment instruction. Review the verified difference and cause evidence before remediation.'];
     if (classification === 'OVERPOSTING_CONFIRMED') return ['Excess posting confirmed', 'A valid aligned journal posted more than the payment instruction. Controlled correction review is required.'];
     if (classification === 'AMOUNT_MATCH_CONFIRMED') return ['Amounts currently match', 'Current aligned journal totals match the payment instruction. Review whether the alert can be closed as a false positive.'];
+  }
+  if (report.exception_type === 'MISSING_LEDGER_POSTING') {
+    if (classification === 'NO_POSTING_RECORD_CONFIRMED') return ['Posting record absent', 'The payment source reports completion, but no modern journal or legacy posting exists in this snapshot. Recheck current state before remediation.'];
+    if (classification === 'POSTING_RECORD_PRESENT') return ['Posting record now present', 'A valid aligned journal is present. Review whether the missing-posting alert is stale or resolved.'];
   }
   if (report.diagnosis_classification === 'LEGITIMATE_SEPARATE_INSTRUCTIONS') return ['Separate payment instructions', 'The investigation classifies these requests as independently authorized instructions. Review the authorization evidence alongside the verified financial postings.'];
   if (report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST' && classification === 'SINGLE_POSTING_CONFIRMED') return ['Repeated request held before execution', 'The report identifies a shared payment instruction. One financial posting is verified, and the repeated request was held before execution.'];
@@ -33,6 +39,16 @@ export function resultSummary(report) {
     return { identified, same: false, separate: false, timeout: false,
       explanation: report.root_cause_explanation,
       relationship: ['Instruction-to-ledger reconciliation', `Difference: ${f.difference ?? 'not established'} ${report.supporting_evidence.original?.currency || ''}`.trim(), classification === 'EXECUTION_OUTCOME_UNKNOWN' ? 'caution' : 'neutral'],
+      cause: [identified ? report.root_cause_title : 'Root cause not established', report.root_cause_explanation, 'caution'], financial };
+  }
+  if (report.exception_type === 'MISSING_LEDGER_POSTING') {
+    const f = report.financial_impact || {}, classification = report.financial_execution_assessment.classification;
+    const financial = classification === 'NO_POSTING_RECORD_CONFIRMED' ? ['No posting record confirmed', 'No current modern journal or legacy posting was found.', 'danger'] :
+      classification === 'POSTING_RECORD_PRESENT' ? ['Posting record present', 'A valid payment-aligned posted journal is now present.', 'positive'] :
+      ['Ledger outcome unknown', 'Incomplete or conflicting evidence prevents a missing-posting conclusion.', 'caution'];
+    const identified = report.root_cause_status === 'MODEL_HYPOTHESIS';
+    return { identified, same: false, separate: false, timeout: false, explanation: report.root_cause_explanation,
+      relationship: ['Payment-to-ledger reconciliation', `${f.linkedJournalCount ?? 'Unknown'} linked journals · ${f.legacyRecordCount ?? 'Unknown'} legacy records`, classification === 'EXECUTION_OUTCOME_UNKNOWN' ? 'caution' : 'neutral'],
       cause: [identified ? report.root_cause_title : 'Root cause not established', report.root_cause_explanation, 'caution'], financial };
   }
   const same = report.diagnosis_classification === 'CONFIRMED_DUPLICATE_REQUEST';
@@ -105,7 +121,7 @@ export function paymentPath(report, side) {
 
 export function causalEvents(report) {
   const events = report.investigation_trace;
-  if (report.exception_type === 'AMOUNT_MISMATCH') {
+  if (['AMOUNT_MISMATCH', 'MISSING_LEDGER_POSTING'].includes(report.exception_type)) {
     const cited = new Set(report.root_cause_evidence_refs || []);
     const selected = events.filter(event => cited.has(`event:${event.id}`));
     return (selected.length ? selected : events).sort((a, b) => Date.parse(a.occurredAt) - Date.parse(b.occurredAt));

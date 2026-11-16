@@ -7,12 +7,25 @@ import { actionPresentation, causalEvents, eventContext, paymentPath, resultSumm
 test('action labels are review proposals and distinguish held duplicates from false positives', () => {
   assert.deepEqual(Object.keys(actionPresentation).sort(), ['CLOSE_HELD_DUPLICATE', 'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION',
     'ESCALATE_FOR_PAYMENT_VERIFICATION', 'REVIEW_FALSE_POSITIVE_CLOSURE', 'REVIEW_SHORTFALL_ADJUSTMENT',
-    'REVIEW_OVERPOSTING_CORRECTION', 'ESCALATE_FOR_AMOUNT_VERIFICATION'].sort());
+    'REVIEW_OVERPOSTING_CORRECTION', 'ESCALATE_FOR_AMOUNT_VERIFICATION', 'REVIEW_MISSING_POSTING_REMEDIATION',
+    'ESCALATE_FOR_LEDGER_VERIFICATION'].sort());
   assert.equal(actionPresentation.CLOSE_HELD_DUPLICATE[0], 'Review held-duplicate closure');
   assert.match(actionPresentation.CLOSE_HELD_DUPLICATE[1], /held repeat/);
   assert.match(actionPresentation.REVIEW_FALSE_POSITIVE_CLOSURE[1], /Independently authorized separate instructions/);
   assert.match(actionPresentation.ESCALATE_FOR_PAYMENT_VERIFICATION[1], /No closure or financial change/);
   assert.match(actionPresentation.REVIEW_SHORTFALL_ADJUSTMENT[1], /verified difference/);
+});
+
+test('missing ledger summary distinguishes snapshot absence from a proven external outcome', () => {
+  const report = { exception_type: 'MISSING_LEDGER_POSTING', root_cause_status: 'MODEL_HYPOTHESIS',
+    root_cause_title: 'Ledger rollback', root_cause_explanation: 'A cited event records a rollback.',
+    supporting_evidence: { original: { currency: 'SGD' } },
+    financial_execution_assessment: { classification: 'NO_POSTING_RECORD_CONFIRMED' },
+    financial_impact: { linkedJournalCount: 0, legacyRecordCount: 0, postingRecordAbsent: true } };
+  const summary = resultSummary(report);
+  assert.equal(summary.financial[0], 'No posting record confirmed');
+  assert.equal(summary.financial[2], 'danger');
+  assert.match(summary.relationship[1], /0 linked journals/);
 });
 
 test('amount mismatch summary presents deterministic reconciliation without duplicate language', () => {

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Bell, ChevronRight, CircleDot, Menu, ShieldCheck, X } from 'lucide-react';
 import { portals } from './portals.js';
+import { findCurrent, flattenRoutes, groupIsActive, isGroup } from './navigation.js';
 import PortalPage from './PortalPage.jsx';
 import { backendConnected, refreshBackend, useBankingRecords } from '../shared/data/bankingRecords.js';
 
@@ -32,6 +33,8 @@ export default function App() {
   const menuRef = useRef(null);
   const menuButtonRef = useRef(null);
   const lastPages = useRef({});
+  const [openGroups, setOpenGroups] = useState(() => new Set());
+  const groupToggleRef = useRef(null);
   useEffect(() => {
     lastPages.current[portal.id] = location.pathname;
     document.title = `${title} · OCBC IntelliOps`;
@@ -58,9 +61,22 @@ export default function App() {
     document.addEventListener('pointerdown', dismiss);
     return () => { document.removeEventListener('keydown', dismiss); document.removeEventListener('pointerdown', dismiss); };
   }, [menuOpen]);
+  const toggleGroup = (group, controlsId) => {
+    // An active group (its own route or a child route) stays expanded.
+    if (groupIsActive(portal, group, location.pathname)) return;
+    // If focus is inside the submenu we are collapsing, move it back to the toggle.
+    const submenu = document.getElementById(controlsId);
+    if (openGroups.has(group.path) && submenu?.contains(document.activeElement)) groupToggleRef.current?.focus();
+    setOpenGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(group.path)) next.delete(group.path);
+      else next.add(group.path);
+      return next;
+    });
+  };
   const PortalIcon = portal.icon;
-  const current = portal.sections.flatMap(s => s.items).find(([path]) => location.pathname === `/${portal.id}/${path}`);
-  const title = current?.[1] || 'Overview';
+  const current = findCurrent(portal, location.pathname);
+  const title = current || 'Overview';
   return <div className="app-shell">
     <a className="skip-link" href="#main-content">Skip to workspace</a>
     <header className="global-header" ref={headerRef}>
@@ -79,13 +95,36 @@ export default function App() {
     <aside id="workspace-navigation" ref={menuRef} className={`sidebar ${menuOpen ? 'is-open' : ''}`} aria-label={`${portal.label} navigation`}>
       <div className="portal-identity"><span className="portal-icon"><PortalIcon size={21}/></span><div><strong>{portal.label}</strong><small>{portal.description}</small></div></div>
       <div className="environment-label"><CircleDot size={14}/><span>{portal.id === 'intelliops' ? 'Intelligent operations' : 'Synthetic banking simulation'}</span></div>
-      <nav className="sidebar-nav" aria-label="Workspace">{portal.sections.map(section => <div className="nav-section" key={section.label}><p className="section-label">{section.label}</p>{section.items.map(([path, label, Icon]) => <NavLink key={path} to={`/${portal.id}/${path}`} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={() => { setMenuOpen(false); setPopover(null); }}><Icon size={20}/><span>{label}</span></NavLink>)}</div>)}</nav>
+      <nav className="sidebar-nav" aria-label="Workspace">{portal.sections.map(section => <div className="nav-section" key={section.label}><p className="section-label">{section.label}</p>{section.items.map(item => {
+        if (isGroup(item)) {
+          const GroupIcon = item.icon;
+          const controlsId = `nav-group-${item.path}`;
+          const active = groupIsActive(portal, item, location.pathname);
+          const open = openGroups.has(item.path) || active;
+          return <div className="nav-group" key={item.path}>
+            <button type="button" ref={groupToggleRef} className={`sidebar-link nav-group-toggle${active ? ' is-parent-active' : ''}`} aria-expanded={open} aria-controls={controlsId} onClick={() => toggleGroup(item, controlsId)}>
+              <GroupIcon className="nav-group-icon" size={20} aria-hidden="true" />
+              <span>{item.label}</span>
+              <ChevronRight className="nav-chevron" size={16} aria-hidden="true" />
+            </button>
+            <div id={controlsId} className={`nav-submenu${open ? ' is-open' : ''}`} role="group" aria-label={`${item.label} sections`} inert={open ? undefined : true}>
+              <div className="nav-submenu-inner">
+                <ul className="nav-submenu-list">
+                  {item.children.map(([childPath, childLabel, ChildIcon]) => <li key={childPath}><NavLink to={`/${portal.id}/${childPath}`} className={({ isActive }) => `sidebar-link nav-submenu-link${isActive ? ' active' : ''}`} onClick={() => { setMenuOpen(false); setPopover(null); }}><ChildIcon size={16} aria-hidden="true" /><span>{childLabel}</span></NavLink></li>)}
+                </ul>
+              </div>
+            </div>
+          </div>;
+        }
+        const [path, label, Icon] = item;
+        return <NavLink key={path} to={`/${portal.id}/${path}`} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={() => { setMenuOpen(false); setPopover(null); }}><Icon size={20}/><span>{label}</span></NavLink>;
+      })}</div>)}</nav>
       <div className="simulation-status"><strong><span className="status-dot"/>Local simulation active</strong><small>No connection to banking services</small></div>
     </aside>
     <main id="main-content" tabIndex={-1} className="main-content" inert={menuOpen ? true : undefined} onClick={() => popover && setPopover(null)}>
       <div className="workspace-topline"><div className="workspace-context"><span>Workspace</span><ChevronRight size={14}/><span>{portal.label}</span><ChevronRight size={14}/><strong>{title}</strong></div><span className="workspace-mode"><ShieldCheck size={13}/>Demo environment</span></div>
       {backendConnected && records.connectionError && <div className="payment-feedback" role="alert">Unable to refresh database records: {records.connectionError} Last retrieved records remain visible. <button className="account-link" onClick={() => refreshBackend().catch(() => {})}>Retry database connection</button></div>}
-      <Routes><Route path="/" element={<Navigate to="/intelliops/overview" replace/>}/>{portals.flatMap(p => p.sections.flatMap(s => s.items.map(([path]) => <Route key={`${p.id}/${path}`} path={`/${p.id}/${path}`} element={<PortalPage portal={portal} title={title}/>}/>)))}<Route path="*" element={<Navigate to="/intelliops/overview" replace/>}/></Routes>
+      <Routes><Route path="/" element={<Navigate to="/intelliops/overview" replace/>}/>{flattenRoutes(portals).map(({ portalId, path }) => <Route key={`${portalId}/${path}`} path={`/${portalId}/${path}`} element={<PortalPage portal={portal} title={title}/>}/>)}<Route path="*" element={<Navigate to="/intelliops/overview" replace/>}/></Routes>
     </main>
   </div>;
 }

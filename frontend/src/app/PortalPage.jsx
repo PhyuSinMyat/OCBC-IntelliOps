@@ -7,6 +7,10 @@ import IntelliOpsPage from '../portals/intelliops/IntelliOpsPage.jsx';
 import ExceptionRecords from '../portals/intelliops/ExceptionRecords.jsx';
 import AIInvestigation from '../portals/intelliops/AIInvestigation.jsx';
 import ResolutionHandoff from '../portals/intelliops/investigation/ResolutionHandoff.jsx';
+import ResolutionWorkspace from '../portals/intelliops/resolution/ResolutionWorkspace.jsx';
+import ResolutionPlans from '../portals/intelliops/resolution/ResolutionPlans.jsx';
+import CustomerCommunication from '../portals/intelliops/resolution/CustomerCommunication.jsx';
+import PolicyAssessment from '../portals/intelliops/resolution/PolicyAssessment.jsx';
 
 export default function PortalPage(props) {
   const { pathname, search } = useLocation();
@@ -16,6 +20,10 @@ export default function PortalPage(props) {
   if (pathname === '/intelliops/exceptions') return <ExceptionRecords/>;
   if (pathname === '/intelliops/investigation') return <AIInvestigation/>;
   if (pathname === '/intelliops/workflows' && new URLSearchParams(search).has('investigation')) return <ResolutionHandoff/>;
+  if (pathname === '/intelliops/workflows/plans') return <ResolutionPlans/>;
+  if (pathname === '/intelliops/workflows/communication') return <CustomerCommunication/>;
+  if (pathname === '/intelliops/workflows/policy') return <PolicyAssessment/>;
+  if (pathname === '/intelliops/workflows') return <ResolutionWorkspace/>;
   if (pathname === '/intelliops/audit') return <ExceptionRecords audit/>;
   return <IntelliOpsPage {...props}/>;
 }

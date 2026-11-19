@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { Bell, ChevronRight, CircleDot, Menu, ShieldCheck, X } from 'lucide-react';
 import { portals } from './portals.js';
-import { findCurrent, flattenRoutes, groupIsActive, isGroup } from './navigation.js';
+import { contextSearch, findCurrent, flattenRoutes, groupIsActive, isGroup } from './navigation.js';
 import PortalPage from './PortalPage.jsx';
 import { backendConnected, refreshBackend, useBankingRecords } from '../shared/data/bankingRecords.js';
 
@@ -50,7 +50,8 @@ export default function App() {
       }
       if (event.type === 'pointerdown' && !headerRef.current?.contains(event.target)) setPopover(null);
       if (event.key === 'Tab' && menuOpen && window.matchMedia('(max-width: 800px)').matches) {
-        const controls = [menuButtonRef.current, ...menuRef.current.querySelectorAll('a')];
+        const controls = [menuButtonRef.current, ...menuRef.current.querySelectorAll('a, button')]
+          .filter(control => control && !control.closest('[inert]'));
         const index = controls.indexOf(document.activeElement);
         const next = (index + (event.shiftKey ? -1 : 1) + controls.length) % controls.length;
         event.preventDefault();
@@ -95,7 +96,7 @@ export default function App() {
     <aside id="workspace-navigation" ref={menuRef} className={`sidebar ${menuOpen ? 'is-open' : ''}`} aria-label={`${portal.label} navigation`}>
       <div className="portal-identity"><span className="portal-icon"><PortalIcon size={21}/></span><div><strong>{portal.label}</strong><small>{portal.description}</small></div></div>
       <div className="environment-label"><CircleDot size={14}/><span>{portal.id === 'intelliops' ? 'Intelligent operations' : 'Synthetic banking simulation'}</span></div>
-      <nav className="sidebar-nav" aria-label="Workspace">{portal.sections.map(section => <div className="nav-section" key={section.label}><p className="section-label">{section.label}</p>{section.items.map(item => {
+      <nav className="sidebar-nav" aria-label="Workspace">{portal.sections.filter(section => !section.hidden).map(section => <div className="nav-section" key={section.label}><p className="section-label">{section.label}</p>{section.items.map(item => {
         if (isGroup(item)) {
           const GroupIcon = item.icon;
           const controlsId = `nav-group-${item.path}`;
@@ -110,7 +111,7 @@ export default function App() {
             <div id={controlsId} className={`nav-submenu${open ? ' is-open' : ''}`} role="group" aria-label={`${item.label} sections`} inert={open ? undefined : true}>
               <div className="nav-submenu-inner">
                 <ul className="nav-submenu-list">
-                  {item.children.map(([childPath, childLabel, ChildIcon]) => <li key={childPath}><NavLink to={`/${portal.id}/${childPath}`} className={({ isActive }) => `sidebar-link nav-submenu-link${isActive ? ' active' : ''}`} onClick={() => { setMenuOpen(false); setPopover(null); }}><ChildIcon size={16} aria-hidden="true" /><span>{childLabel}</span></NavLink></li>)}
+                  {item.children.map(([childPath, childLabel, ChildIcon]) => <li key={childPath}><NavLink to={{ pathname: `/${portal.id}/${childPath}`, search: active ? contextSearch(new URLSearchParams(location.search)) : '' }} className={({ isActive }) => `sidebar-link nav-submenu-link${isActive ? ' active' : ''}`} onClick={() => { setMenuOpen(false); setPopover(null); }}><ChildIcon size={16} aria-hidden="true" /><span>{childLabel}</span></NavLink></li>)}
                 </ul>
               </div>
             </div>
@@ -119,7 +120,7 @@ export default function App() {
         const [path, label, Icon] = item;
         return <NavLink key={path} to={`/${portal.id}/${path}`} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`} onClick={() => { setMenuOpen(false); setPopover(null); }}><Icon size={20}/><span>{label}</span></NavLink>;
       })}</div>)}</nav>
-      <div className="simulation-status"><strong><span className="status-dot"/>Local simulation active</strong><small>No connection to banking services</small></div>
+      <div className="simulation-status"><strong><span className="status-dot"/>Demo Environment · Synthetic Banking Data</strong></div>
     </aside>
     <main id="main-content" tabIndex={-1} className="main-content" inert={menuOpen ? true : undefined} onClick={() => popover && setPopover(null)}>
       <div className="workspace-topline"><div className="workspace-context"><span>Workspace</span><ChevronRight size={14}/><span>{portal.label}</span><ChevronRight size={14}/><strong>{title}</strong></div><span className="workspace-mode"><ShieldCheck size={13}/>Demo environment</span></div>

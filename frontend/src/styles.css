@@ -107,16 +107,17 @@
 
 /* Expandable sidebar navigation (Resolution Workspace) */
 .nav-group { margin: 2px 0; }
-.nav-group-toggle { width: 100%; text-align: left; }
+.nav-group-toggle { width: 100%; text-align: left; background: transparent; color: inherit; }
+.nav-group-toggle:hover, .nav-group-toggle.is-parent-active { background: #1b2c42; color: #fff; }
 .nav-group-toggle .nav-group-icon { transition: color .15s; }
 .nav-group-toggle .nav-chevron { margin-left: auto; color: #8d9db4; stroke-width: 2; transition: transform .18s ease, color .15s; flex-shrink: 0; }
 .nav-group-toggle:hover .nav-chevron { color: #c7d3e6; }
 .nav-group-toggle[aria-expanded="true"] .nav-chevron { transform: rotate(90deg); color: #c7d3e6; }
-.nav-group-toggle.is-parent-active { color: #fff; border-left-color: rgba(48, 186, 145, .55); }
+.nav-group-toggle.is-parent-active { border-left-color: rgba(48, 186, 145, .55); }
 .nav-group-toggle.is-parent-active .nav-group-icon { color: #cfe6da; }
 .nav-group-toggle.is-parent-active .nav-chevron { color: #b9d6c8; }
-.nav-submenu { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .18s ease; }
-.nav-submenu.is-open { grid-template-rows: 1fr; }
+.nav-submenu { display: grid; grid-template-rows: 0fr; visibility: hidden; transition: grid-template-rows .18s ease, visibility 0s linear .18s; }
+.nav-submenu.is-open { grid-template-rows: 1fr; visibility: visible; transition-delay: 0s; }
 .nav-submenu-inner { min-height: 0; overflow: hidden; }
 .nav-submenu-list { list-style: none; margin: 2px 0 4px 22px; padding: 2px 0 2px 10px; border-left: 1.5px solid #2a3a52; display: flex; flex-direction: column; gap: 1px; }
 .nav-submenu-link { min-height: 38px; font-size: 12.5px; font-weight: 400; padding: 7px 11px; gap: 11px; border-left: 3px solid transparent; }
@@ -126,6 +127,7 @@
 .nav-submenu-link.active { background: rgba(48, 186, 145, .16); color: #fff; font-weight: 500; border-left-color: #30ba91; box-shadow: none; }
 .nav-submenu-link.active svg { color: #6fe0b6; }
 .nav-submenu-link:focus-visible { outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) { .nav-submenu, .nav-group-toggle, .nav-group-toggle .nav-chevron { transition: none; } }
 
 /* Resolution Workspace placeholder pages */
 .resolution-workspace { max-width: 980px; }

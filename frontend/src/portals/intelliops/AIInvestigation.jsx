@@ -57,26 +57,32 @@ export default function AIInvestigation() {
   const key = selected ? investigationKey(selected, fixture ? `fixture:${fixtureName}` : backendConnected ? `backend-llm:${import.meta.env.VITE_BANKING_API_URL}` : 'local') : '';
   if (backendConnected && caseId && !selected && !loadError) return <p role="status">Loading selected case…</p>;
   if (loadError) return <p className="inv-error" role="alert">{loadError}</p>;
-  return <InvestigationWorkspace key={`${key}:${invalidFixture}`} {...{ selected, records, accountList, fixture, keyValue: key, location, navigate, invalidFixture }}/>;
+  const linkedReportId = params.get('investigation');
+  return <InvestigationWorkspace key={JSON.stringify([key, invalidFixture, linkedReportId])} {...{ selected, records, accountList, fixture, keyValue: key, location, navigate, invalidFixture, linkedReportId }}/>;
 }
 
-function InvestigationWorkspace({ selected, records, accountList, fixture, keyValue, location, navigate, invalidFixture }) {
+function InvestigationWorkspace({ selected, records, accountList, fixture, keyValue, location, navigate, invalidFixture, linkedReportId }) {
   const [tab, setTab] = useState('summary');
-  const [drawer, setDrawer] = useState(null), [viewedId, setViewedId] = useState(null);
+  const [drawer, setDrawer] = useState(null), [viewedId, setViewedId] = useState(linkedReportId);
   const [error, setError] = useState(''), [failNext, setFailNext] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(backendConnected && !fixture), [historyError, setHistoryError] = useState('');
   const [historyPage, setHistoryPage] = useState({ hasMore: false, nextOffset: 0 });
   async function refreshHistory(offset = 0) {
     if (!selected || fixture || !backendConnected) return;
     setHistoryLoading(true); setHistoryError('');
-    try { setHistoryPage(await loadPersistedInvestigations(keyValue, selected.id, { offset })); }
+    try {
+      setHistoryPage(await loadPersistedInvestigations(keyValue, selected.id, { offset }));
+      if (linkedReportId && offset === 0 && !getRuns(keyValue).some(run => run.investigation_id === linkedReportId && run.durable)) {
+        await loadPersistedInvestigations(keyValue, selected.id, { investigationId: linkedReportId });
+      }
+    }
     catch (e) { setHistoryError(e.message); }
     finally { setHistoryLoading(false); }
   }
   useEffect(() => { refreshHistory(); }, [keyValue]);
   const runs = getRuns(keyValue), latest = runs.at(-1);
   const viewed = viewedId ? runs.find(r => r.investigation_id === viewedId) : latest;
-  const historical = Boolean(viewedId && viewedId !== latest?.investigation_id);
+  const historical = Boolean(viewed && viewedId && viewedId !== latest?.investigation_id);
   const running = latest && ['QUEUED', 'COLLECTING_EVIDENCE', 'ANALYZING'].includes(latest.run_status);
   const report = viewed?.run_status === 'COMPLETED' ? viewed.report : null;
   const amountMismatch = isAmountMismatch(selected);

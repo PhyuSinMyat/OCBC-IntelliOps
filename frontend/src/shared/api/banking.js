@@ -3,6 +3,7 @@ import { bankingApiUrl } from './config.js';
 async function send(url, options) {
   try { return await fetch(url, options); }
   catch {
+    options?.signal?.throwIfAborted();
     throw new Error('Cannot reach FastAPI. Check that the backend is running, the configured API URL and CORS access. Connected mode has not switched to browser-only records.');
   }
 }
@@ -47,14 +48,15 @@ export async function paymentRequest(path, body) {
   return data;
 }
 
-export async function exceptionRequest(path, { method = 'GET', body, requestId } = {}) {
+export async function exceptionRequest(path, { method = 'GET', body, requestId, signal } = {}) {
   if (!bankingApiUrl) throw new Error('The backend API URL is not configured.');
   const response = await send(`${bankingApiUrl}${path}`, {
-    method, headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...authHeaders(),
+    method, signal, headers: { ...(body === undefined ? {} : { 'Content-Type': 'application/json' }), ...authHeaders(),
       ...(requestId ? { 'X-Investigation-Request-ID': requestId } : {}) },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
   });
   const data = await responseData(response);
+  signal?.throwIfAborted();
   if (!response.ok) throw apiError(response, data, 'Exception operation failed');
   return data;
 }

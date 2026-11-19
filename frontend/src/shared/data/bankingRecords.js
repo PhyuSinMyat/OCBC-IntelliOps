@@ -160,9 +160,9 @@ export async function runPaymentDetection(role = 'ANALYST') {
   save(next);
   return count;
 }
-export async function fetchExceptionCase(caseId) {
+export async function fetchExceptionCase(caseId, options) {
   if (!backendConnected) return state.exception_cases.find(item => item.id === caseId) || null;
-  return exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}`);
+  return exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}`, options);
 }
 export async function addExceptionNote(caseId, note) {
   if (!backendConnected) throw new Error('Case lifecycle actions require the connected backend.');

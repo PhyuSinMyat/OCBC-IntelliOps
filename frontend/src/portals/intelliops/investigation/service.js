@@ -26,6 +26,7 @@ export const subscribeInvestigations = fn => { listeners.add(fn); return () => l
 export const investigationRevision = () => revision;
 export const investigationKey = (c, scope) => `${scope}:${c.id}:${c.transactionId}`;
 export const getRuns = key => saved.runs[key] || [];
+export const readInvestigationAuditRuns = () => Object.values(saved.runs).flat();
 export const getHandoff = id => saved.handoffs[id] || null;
 const pause = () => new Promise(resolve => setTimeout(resolve, 420));
 

@@ -5,6 +5,7 @@ import LedgerJournals from '../portals/core-banking/LedgerJournals.jsx';
 import Transactions from '../portals/payment-processing/Transactions.jsx';
 import IntelliOpsPage from '../portals/intelliops/IntelliOpsPage.jsx';
 import ApprovalCenter from '../portals/intelliops/ApprovalCenter.jsx';
+import AuditTrail from '../portals/intelliops/AuditTrail.jsx';
 import ExceptionRecords from '../portals/intelliops/ExceptionRecords.jsx';
 import AIInvestigation from '../portals/intelliops/AIInvestigation.jsx';
 import ResolutionWorkspace from '../portals/intelliops/resolution/ResolutionWorkspace.jsx';
@@ -25,6 +26,6 @@ export default function PortalPage(props) {
   if (pathname === '/intelliops/workflows/policy') return <PolicyAssessment/>;
   if (pathname === '/intelliops/approvals') return <ApprovalCenter/>;
   if (pathname === '/intelliops/workflows') return <ResolutionWorkspace/>;
-  if (pathname === '/intelliops/audit') return <ExceptionRecords audit/>;
+  if (pathname === '/intelliops/audit') return <AuditTrail/>;
   return <IntelliOpsPage {...props}/>;
 }

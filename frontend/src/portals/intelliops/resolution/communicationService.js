@@ -14,7 +14,48 @@ export const responseTypes = {
 
 const histories = new Map();
 const historyPrefix = 'intelliops-communication-demo-v1:';
+const auditPrefix = 'intelliops-communication-audit-v1:';
 const keyFor = caseId => historyPrefix + JSON.stringify(caseId);
+const archive = new Map();
+
+function communicationAuditFields({ id, caseId, investigationId, createdAt, direction, communicationType, status, recordedBy, relatedCommunicationId, relatedTransactionId }) {
+  return { id, caseId, investigationId, createdAt, direction, communicationType, status, recordedBy, relatedCommunicationId, relatedTransactionId };
+}
+
+function readCommunicationArchive(caseId) {
+  if (archive.has(caseId)) return archive.get(caseId);
+  try {
+    const items = JSON.parse(globalThis.sessionStorage.getItem(auditPrefix + JSON.stringify(caseId)));
+    if (Array.isArray(items)) return items.filter(item => item?.caseId === caseId);
+  } catch { /* Browser storage can be unavailable. */ }
+  return [];
+}
+
+function archiveCommunications(caseId, messages) {
+  const entries = new Map(readCommunicationArchive(caseId).map(item => [item.id, item]));
+  for (const message of messages) if (!entries.has(message.id)) entries.set(message.id, communicationAuditFields(message));
+  const updated = [...entries.values()];
+  archive.set(caseId, updated);
+  try { globalThis.sessionStorage.setItem(auditPrefix + JSON.stringify(caseId), JSON.stringify(updated)); }
+  catch { /* The active application retains this audit metadata. */ }
+}
+
+export function readCommunicationAuditRecords() {
+  const caseIds = new Set([...histories.keys(), ...archive.keys()]);
+  try {
+    for (const key of Object.keys(globalThis.sessionStorage)) {
+      const prefix = [historyPrefix, auditPrefix].find(value => key.startsWith(value));
+      if (!prefix) continue;
+      try {
+        const id = JSON.parse(key.slice(prefix.length));
+        if (typeof id === 'string') caseIds.add(id);
+      } catch { /* Ignore unrelated or invalid keys. */ }
+    }
+  } catch { /* In-memory records remain accessible. */ }
+  return [...caseIds].flatMap(caseId => [...new Map([
+    ...readHistory(caseId).map(communicationAuditFields), ...readCommunicationArchive(caseId),
+  ].map(item => [item.id, item])).values()]);
+}
 const usableName = value => {
   const name = typeof value === 'string' ? value.trim() : '';
   return name && !/^(?:synthetic|test|fixture|demo)\b.*\b(?:verification|fixture|test|backend)\b|^(?:unknown|unavailable|not available)$/i.test(name.normalize('NFKC')) ? name : null;
@@ -109,6 +150,7 @@ export function resolutionIncidentNotifications(caseId, investigationId) {
 
 export function clearSimulatedCommunications(caseId, customerId) {
   const history = readHistory(caseId);
+  archiveCommunications(caseId, history);
   const remaining = history.filter(item => item.customerId !== customerId);
   if (remaining.length) globalThis.sessionStorage.setItem(keyFor(caseId), JSON.stringify(remaining));
   else globalThis.sessionStorage.removeItem(keyFor(caseId));
@@ -145,6 +187,7 @@ function append(context, entry, recordedBy) {
     simulated: true, recordedBy: recordedBy || null, createdAt: new Date().toISOString(), ...entry,
   };
   const updated = [...history, item];
+  archiveCommunications(context.caseId, [item]);
   histories.set(context.caseId, updated);
   try {
     globalThis.sessionStorage.setItem(keyFor(context.caseId), JSON.stringify(updated));

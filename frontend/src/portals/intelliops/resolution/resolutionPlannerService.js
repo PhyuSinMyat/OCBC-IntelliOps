@@ -136,6 +136,24 @@ export function getSessionResolutionPlan(caseId, investigationId) {
   return getSessionResolutionVersions(caseId, investigationId).at(-1) || null;
 }
 
+export function readResolutionAuditVersions() {
+  const keys = new Set(sessionPlans.keys());
+  try {
+    for (const key of Object.keys(globalThis.sessionStorage)) {
+      if (key.startsWith(storagePrefix)) keys.add(key);
+    }
+  } catch { /* In-memory versions remain accessible. */ }
+  return [...keys].flatMap(key => {
+    try {
+      const [caseId, investigationId] = JSON.parse(key.slice(storagePrefix.length));
+      return getSessionResolutionVersions(caseId, investigationId).map(plan => ({
+        caseId, investigationId, planId: plan.planId, version: plan.version, generatedAt: plan.generatedAt,
+        action: plan.recommendedActionCode, snapshot: plan.customerSnapshot.reference,
+      }));
+    } catch { return []; }
+  });
+}
+
 function versionMetadata(caseId, investigationId, version, proposal, snapshot) {
   const planId = `DEMO-RP:${caseId}:${investigationId}`;
   return {

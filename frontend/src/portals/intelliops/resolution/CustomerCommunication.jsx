@@ -238,7 +238,7 @@ function CaseConversation({ context, recipientContext, record, evidenceCurrent, 
   const [resetError, setResetError] = useState('');
   const messageCount = history.filter(item => item.direction !== 'SYSTEM').length;
   function clearTimeline() {
-    if (!window.confirm(`Clear the simulated conversation timeline for ${context.caseId}?`)) return;
+    if (!window.confirm(`Clear the simulated conversation timeline for ${context.caseId}? Recorded audit metadata stays in this browser session.`)) return;
     try {
       clearSimulatedCommunications(context.caseId, recipientContext.customerId);
       setHistory([]);

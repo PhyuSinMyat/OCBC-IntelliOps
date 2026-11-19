@@ -1,0 +1,72 @@
+﻿.pa-workspace { --pa-pass: #17604d; --pa-warning: #79501e; --pa-danger: #922c42; }
+.pa-workspace h2 { font-size: 18px; }
+.pa-header, .pa-heading, .pa-next { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px 16px; }
+.pa-header h1 { margin-bottom: 6px; font-size: clamp(28px, 3vw, 36px); letter-spacing: -.035em; }
+.pa-progress { width: 100%; }
+.pa-progress ol { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--rp-muted); }
+.pa-progress li { display: flex; align-items: center; gap: 7px; }
+.pa-progress li + li::before { content: '›' / ''; color: var(--rp-muted); }
+.pa-progress [aria-current] { color: var(--rp-ink); font-weight: 750; }
+.pa-progress a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.pa-panel { padding: clamp(15px, 2vw, 22px); border: 1px solid var(--rp-border); border-radius: 11px; background: #fff; box-shadow: 0 2px 8px #172a4408; min-width: 0; }
+.pa-overview dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 9px 13px; margin: 12px 0 0; }
+.pa-workspace .pa-overview-case { margin-top: 6px; }
+.pa-overview-case strong { color: var(--rp-ink); }
+.pa-workspace dt { color: var(--rp-muted); font-size: 13px; }
+.pa-workspace dd { margin: 3px 0 0; font-size: 14px; font-weight: 700; }
+.pa-references { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--rp-border); }
+.pa-references dl { grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr)); }
+.pa-references code, .pa-history-result code { overflow-wrap: anywhere; }
+.pa-references .pa-copy { display: flex; width: fit-content; min-height: 32px; margin-top: 6px; padding: 4px 8px; }
+.pa-workspace summary { cursor: pointer; font-size: 14px; font-weight: 700; color: #244e75; }
+.pa-decision { display: flex; align-items: flex-start; gap: 14px; padding: clamp(17px, 2.4vw, 28px); border: 1px solid var(--pa-outline); border-left: 4px solid var(--pa-accent); border-radius: 11px; background: var(--pa-surface); }
+.pa-neutral { --pa-accent: #365c82; --pa-outline: #cddbeb; --pa-surface: #eef4fc; }
+.pa-pass { --pa-accent: var(--pa-pass); --pa-outline: #c6e2d5; --pa-surface: #eef8f3; }
+.pa-warning { --pa-accent: var(--pa-warning); --pa-outline: #ead7b8; --pa-surface: #fff8eb; }
+.pa-danger { --pa-accent: var(--pa-danger); --pa-outline: #ebcad1; --pa-surface: #fff2f4; }
+.pa-decision-icon, .pa-check-icon { display: grid; place-items: center; flex: none; color: var(--pa-accent); background: #fff; border: 1px solid var(--pa-outline); border-radius: 8px; }
+.pa-decision-icon { width: 46px; height: 46px; }
+.pa-decision-kicker { color: var(--pa-accent); font-size: 13px; font-weight: 750; }
+.pa-decision h2 { margin: 3px 0 4px; font-size: clamp(21px, 2.5vw, 30px); letter-spacing: -.025em; }
+.pa-decision dl { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 10px 0 0; }
+.pa-workspace .pa-decision-next { margin-top: 9px; color: var(--pa-accent); }
+.pa-decision-action { margin-top: 10px; }
+.pa-spinner { animation: pa-spin .85s linear infinite; }
+@keyframes pa-spin { to { transform: rotate(360deg); } }
+.pa-controls { margin: 7px 0 0; padding: 0; list-style: none; }
+.pa-workspace #policy-checks { scroll-margin-top: calc(var(--header-height, 75px) + 15px); }
+.pa-controls li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: start; gap: 9px; padding: 10px 0; border-top: 1px solid var(--rp-border); scroll-margin-top: calc(var(--header-height, 75px) + 15px); }
+.pa-check-icon { width: 29px; height: 29px; background: var(--pa-surface); }
+.pa-controls h3 { margin-bottom: 4px; font-size: 15px; }
+.pa-workspace .pa-check-summary { margin-top: 6px; font-size: 13px; }
+.pa-control-details, .pa-retry { margin-top: 6px; }
+.pa-controls .pa-retry { min-height: 34px; padding: 5px 9px; }
+.pa-check-badge { display: inline-flex; width: fit-content; padding: 4px 8px; border-radius: 15px; border: 1px solid var(--pa-outline); background: var(--pa-surface); color: var(--pa-accent); font-size: 12px; font-weight: 750; }
+.pa-authorization > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 10px 0; }
+.pa-authorization article { padding: 10px 12px; border: 1px solid #e0e8f3; border-radius: 8px; background: #f7f9fd; }
+.pa-authorization article h3 { margin-bottom: 4px; font-size: 15px; }
+.pa-role-heading { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-bottom: 5px; color: #294e74; }
+.pa-role-heading h3 { margin: 0; }
+.pa-workspace .pa-authorization > p { display: flex; align-items: flex-start; gap: 7px; font-size: 13px; }
+.pa-authorization svg, .pa-empty > svg { flex: none; }
+.pa-next div:first-child { flex: 1 1 260px; }
+.pa-next p { margin-top: 4px; }
+.pa-history ul { display: grid; gap: 7px; list-style: none; padding: 0; margin: 10px 0 0; }
+.pa-history li { padding-top: 8px; border-top: 1px solid var(--rp-border); font-size: 14px; }
+.pa-history-row { display: inline-grid; width: calc(100% - 22px); grid-template-columns: minmax(92px, .8fr) auto minmax(160px, 1.4fr) minmax(135px, 1fr) auto; align-items: center; gap: 5px 12px; vertical-align: middle; }
+.pa-history-result { margin: 6px 0 2px; padding: 9px 12px; border-radius: 7px; background: #f5f8fc; }
+.pa-history-result dl { margin: 8px 0 0; }
+.pa-history-result dl > div + div { margin-top: 6px; }
+.pa-history-result dd { font-weight: 400; }
+.pa-history time { color: var(--rp-muted); }
+.pa-empty { display: flex; align-items: flex-start; gap: 11px; }
+.pa-empty p { margin: 4px 0 10px; }
+.pa-workspace .pa-error { color: var(--pa-danger); font-weight: 700; }
+.pa-workspace .pa-receipt-note { margin: 10px 0; }
+@media (max-width: 620px) {
+  .pa-history-row { display: inline-flex; flex-wrap: wrap; }
+  .pa-authorization > div { grid-template-columns: minmax(0, 1fr); }
+  .pa-controls li { grid-template-columns: auto minmax(0, 1fr); }
+  .pa-check-badge { grid-column: 2; }
+}
+@media (prefers-reduced-motion: reduce) { .pa-spinner { animation: none; } }

@@ -26,11 +26,18 @@ export const subscribeInvestigations = fn => { listeners.add(fn); return () => l
 export const investigationRevision = () => revision;
 export const investigationKey = (c, scope) => `${scope}:${c.id}:${c.transactionId}`;
 export const getRuns = key => saved.runs[key] || [];
+export const readInvestigationAuditRuns = () => Object.values(saved.runs).flat();
 export const getHandoff = id => saved.handoffs[id] || null;
 const pause = () => new Promise(resolve => setTimeout(resolve, 420));
 
-export async function loadPersistedInvestigations(key, caseId, { offset = 0 } = {}) {
-  const history = await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}/investigations?limit=20&offset=${offset}`);
+export const readInvestigation = (caseId, investigationId, options) => exceptionRequest(
+  `/api/exceptions/${encodeURIComponent(caseId)}/investigations/${encodeURIComponent(investigationId)}`, options
+);
+
+export async function loadPersistedInvestigations(key, caseId, { offset = 0, investigationId } = {}) {
+  const history = investigationId
+    ? await readInvestigation(caseId, investigationId)
+    : await exceptionRequest(`/api/exceptions/${encodeURIComponent(caseId)}/investigations?limit=20&offset=${offset}`);
   const incoming = history.investigations.map(item => {
     const report = item.report;
     return { case_id: caseId, investigation_id: item.investigation_id || `REQUEST-${item.request_id}`,

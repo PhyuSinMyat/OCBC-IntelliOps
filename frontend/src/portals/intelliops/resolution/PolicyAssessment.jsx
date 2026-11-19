@@ -5,6 +5,7 @@ import { contextSearch } from '../../../app/navigation.js';
 import { useBankingRecords } from '../../../shared/data/bankingRecords.js';
 import { displayTime } from '../investigation/ReportSections.jsx';
 import { cachedResolutionCase, readResolutionCase } from './resolutionData.js';
+import ApprovalWalkthroughButton, { approvalWalkthroughEvidence } from './approvalWalkthrough.jsx';
 import { resolutionPolicySearch } from './resolutionPlannerService.js';
 import { assessmentApplies, evaluatePolicy, getPolicyActivity, policyActionLabel, policySubmissionReadiness, recordPolicyAssessment, recordPolicySubmission, resolvePolicyContext } from './policyDemoService.js';
 import './policy-assessment.css';
@@ -167,15 +168,16 @@ function PolicyWorkspace() {
   const navigate = useNavigate();
   const banking = useBankingRecords();
   const context = resolvePolicyContext(params);
-  const fallbackRecord = (banking.exception_cases || []).find(item => item.id === context.caseId);
+  const walkthrough = approvalWalkthroughEvidence(context.caseId, context.investigationId);
+  const fallbackRecord = walkthrough?.record || (banking.exception_cases || []).find(item => item.id === context.caseId);
   const search = contextSearch(params);
-  const latestPlanTo = plans + search;
+  const latestPlanTo = walkthrough ? plans : plans + search;
   const backQuery = new URLSearchParams(search);
   if (context.plan) {
     backQuery.set('plan', context.plan.planId);
     backQuery.set('version', String(context.plan.version));
   }
-  const back = context.plan ? plans + '?' + backQuery.toString() : latestPlanTo;
+  const back = context.plan && !walkthrough ? plans + '?' + backQuery.toString() : latestPlanTo;
   const communicationTo = communication + search;
   const [activity, setActivity] = useState(() => getPolicyActivity(context.caseId));
   const [record, setRecord] = useState(null);
@@ -203,6 +205,7 @@ function PolicyWorkspace() {
   const latestContext = () => resolvePolicyContext(new URLSearchParams(params));
 
   async function checkEvidence(selected, signal) {
+    if (walkthrough) return walkthrough;
     try {
       return await readResolutionCase(selected.caseId, selected.investigationId, fallbackRecord, { signal });
     } catch (failure) {
@@ -229,7 +232,7 @@ function PolicyWorkspace() {
       if (submit && result.status === 'APPROVAL_REQUIRED' && result.verification.state === 'CURRENT' &&
           policySubmissionReadiness(selected, assessment, getPolicyActivity(selected.caseId)).ready &&
           result.evidenceSnapshotReference === assessment.evidenceSnapshotReference) {
-        const updated = recordPolicySubmission(selected, assessment, banking.role);
+        const updated = recordPolicySubmission(selected, assessment, walkthrough ? 'ANALYST' : banking.role);
         setActivity(updated);
         const receipt = updated.submissions.find(item => item.assessmentId === assessment.assessmentId);
         const query = new URLSearchParams(resolutionPolicySearch(search, selected.plan));
@@ -261,6 +264,7 @@ function PolicyWorkspace() {
   return <>
     <PageHeader {...{ back, approvalTo }}/>
     <Overview context={context} record={record || fallbackRecord} {...{ investigationAccepted }}/>
+    {walkthrough && <p className="pa-check-summary" role="status">Approval workflow demo · Uses a separate local case with fixture evidence and a simulated notification.</p>}
     <Decision {...{ status }} assessment={current ? assessment : null} running={Boolean(busy)}
       reason={decisionReason} outdated={Boolean(assessment && !current)} onRun={() => run()} {...{ readiness }} planVersion={context.plan.version}/>
     {error && <p className="pa-error" role="alert">{error}</p>}
@@ -273,6 +277,7 @@ function PolicyWorkspace() {
             'Assessment and submission are frontend simulations.'}</p>}</div>
       <div className="rp-actions">
         {status === 'BLOCKED' ? <a className="rp-button" href="#policy-checks">View Blocking Requirements</a> : <Link className="rp-button" to={back}>Back to Resolution Plan</Link>}
+        {!busy && !walkthrough && status === 'REVIEW_REQUIRED' && assessment?.verification?.state === 'UNAVAILABLE' && <ApprovalWalkthroughButton/>}
         {!busy && !context.block && ['BLOCKED', 'ELIGIBLE', 'APPROVAL_REQUIRED'].includes(status) &&
           <button className="rp-button" type="button" onClick={() => run()}>Re-evaluate Policy</button>}
         {busy ? <button className="rp-button rp-primary" type="button" disabled>{busy === 'submitting' ? 'Checking submission…' : 'Assessing…'}</button> :

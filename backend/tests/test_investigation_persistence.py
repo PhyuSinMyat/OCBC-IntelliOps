@@ -4,6 +4,7 @@ os.environ['DATABASE_URL'] = 'sqlite:///:memory:'
 import unittest
 import tempfile
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from copy import deepcopy
 from uuid import uuid4
@@ -154,6 +155,10 @@ class PersistenceTests(unittest.TestCase):
         evidence = self.client.get('/api/exceptions/CASE-000004/investigation-evidence').json()
         expected = fingerprint(evidence); changed = deepcopy(evidence)
         changed['retrieved_at'] = '2099-01-01T00:00:00Z'; changed['snapshot']['events'].reverse()
+        self.assertEqual(expected, fingerprint(changed))
+        timestamp = datetime.fromisoformat(changed['snapshot']['caseRecord']['createdAt'].replace('Z', '+00:00'))
+        changed['snapshot']['caseRecord']['createdAt'] = timestamp.astimezone(
+            timezone(timedelta(hours=8))).isoformat()
         self.assertEqual(expected, fingerprint(changed))
         changed['snapshot']['requests'][0]['authorizationId'] = 'changed'
         self.assertNotEqual(expected, fingerprint(changed))

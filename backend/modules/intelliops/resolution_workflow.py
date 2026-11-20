@@ -19,7 +19,7 @@ from .service import CaseError, get_case, parse_case_id
 from shared.timestamps import utc_now
 
 
-POLICY_VERSION = "RESOLUTION_POLICY_V1"
+POLICY_VERSION = "RESOLUTION_POLICY_V2"
 _completed_financial_claim = re.compile(
     r"\b(?:refund|reversal|reimbursement|correction|funds?)\b.{0,40}\b(?:completed|executed|returned|restored|sent|posted)\b|"
     r"\b(?:completed|executed|returned|restored|sent|posted)\b.{0,40}\b(?:refund|reversal|reimbursement|correction|funds?)\b", re.I)
@@ -481,6 +481,18 @@ def list_assessments(db, case_id):
     return [serialize_assessment(row) for row in rows]
 
 
+def _communication_control(rule, delivered_notice, customer_responses):
+    if not rule:
+        return "BLOCKED", "The communication requirement cannot be determined until the proposed action is eligible."
+    if not rule["financial"]:
+        return "NOT_REQUIRED", "Customer communication is not required for this non-financial review action."
+    if not delivered_notice:
+        return "REVIEW_REQUIRED", "Send the required incident notification successfully before forwarding this financial proposal."
+    if customer_responses:
+        return "PASS", "A required incident notification was delivered and a linked customer reply is recorded."
+    return "PASS", "A required incident notification was delivered successfully. A customer reply is not required for this policy action."
+
+
 def assess_policy(db, case_id, plan_id, role):
     case = get_case(db, case_id)
     plan = db.get(ResolutionPlan, plan_id)
@@ -499,18 +511,22 @@ def assess_policy(db, case_id, plan_id, role):
     rule = _matching_rule(report, plan.action_code)
     current = latest and latest.id == plan.id and revision == plan.customer_context_revision
     consistent = bool(rule and report.get("recommended_action_code") == plan.action_code)
-    notice = db.scalar(select(func.count()).select_from(CustomerCommunication).outerjoin(
+    notice = db.scalar(select(func.count()).select_from(CustomerCommunication).join(
         EmailDelivery, EmailDelivery.communication_id == CustomerCommunication.id).where(
         CustomerCommunication.case_id == case.id, CustomerCommunication.investigation_id == plan.investigation_id,
         CustomerCommunication.direction == "OUTGOING", CustomerCommunication.communication_type == "INCIDENT_NOTIFICATION",
-        or_(CustomerCommunication.simulated.is_(True), EmailDelivery.status == "SENT"))) or 0
+        CustomerCommunication.simulated.is_(False), EmailDelivery.status == "SENT")) or 0
+    responses = db.scalar(select(func.count()).select_from(CustomerCommunication).where(
+        CustomerCommunication.case_id == case.id, CustomerCommunication.investigation_id == plan.investigation_id,
+        CustomerCommunication.direction == "INCOMING", CustomerCommunication.simulated.is_(False))) or 0
+    communication_status, communication_reason = _communication_control(rule, notice, responses)
     checks = [
         ("currency", "Resolution Plan Currency", "PASS" if current else "BLOCKED", "The plan is current and includes the latest customer context." if current else "The plan is superseded or omits newer customer context."),
         ("evidence", "Investigation Evidence", "PASS" if accepted else "BLOCKED", "An accepted investigation is linked to this plan."),
         ("financial", "Current Financial Verification", "PASS" if evidence_state == "CURRENT" and consistent else "BLOCKED" if evidence_state == "INCONSISTENT" else "REVIEW_REQUIRED", "Current source evidence matches the accepted financial assessment." if evidence_state == "CURRENT" and consistent else "Current evidence is unavailable or differs from the accepted snapshot."),
         ("action", "Action Eligibility", "PASS" if rule and consistent and case.status not in {"CLOSED", "RESOLVED"} else "BLOCKED", "The proposed review action matches the accepted findings." if rule and consistent else "The proposed action is unsupported or contradicts the accepted findings."),
         ("approval", "Approval Requirement", "APPROVAL_REQUIRED" if rule and rule["financial"] else "PASS" if rule else "BLOCKED", "Administrator review is required; no financial action is executed." if rule and rule["financial"] else "Authorised human review is required."),
-        ("communication", "Customer Communication", "PASS" if not rule or not rule["financial"] or notice else "REVIEW_REQUIRED", "An incident notification is recorded with an accepted delivery state." if notice else "Send or record the required incident notification before forwarding this financial proposal."),
+        ("communication", "Customer Communication", communication_status, communication_reason),
     ]
     controls = [dict(id=key, name=name, status=status, reason=reason) for key, name, status, reason in checks]
     outcome = next((candidate for candidate in ("BLOCKED", "REVIEW_REQUIRED", "APPROVAL_REQUIRED") if any(c["status"] == candidate for c in controls)), "ELIGIBLE")

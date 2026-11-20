@@ -1,17 +1,22 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CheckCircle2, CircleHelp, LockKeyhole, TriangleAlert, XCircle } from 'lucide-react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, CheckCircle2, CircleHelp, LockKeyhole, MessageSquare, TriangleAlert, UserCheck, XCircle } from 'lucide-react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { contextSearch } from '../../../app/navigation.js';
 import { exceptionRequest } from '../../../shared/api/banking.js';
 import { displayTime, humanize } from '../investigation/ReportSections.jsx';
 import { readResolutionVersions } from './resolutionBackendService.js';
+import { submitApprovalRequest } from './approvalBackendService.js';
 import './policy-assessment.css';
 import './resolution-plans.css';
 
 const plansPath = '/intelliops/workflows/plans';
+const communicationPath = '/intelliops/workflows/communication';
+const approvalPath = '/intelliops/approvals';
+const currentPolicyVersion = 'RESOLUTION_POLICY_V2';
 const states = {
   PASS: [CheckCircle2, 'pass', 'Passed'], REVIEW_REQUIRED: [TriangleAlert, 'warning', 'Review required'],
   APPROVAL_REQUIRED: [LockKeyhole, 'warning', 'Approval required'], BLOCKED: [XCircle, 'danger', 'Blocked'],
+  NOT_REQUIRED: [CircleHelp, 'neutral', 'Not required'],
 };
 const outcomeText = {
   ELIGIBLE: 'The current proposal is eligible for its explicitly permitted non-financial next step.',
@@ -32,9 +37,10 @@ async function runAssessment(caseId, planId) {
 
 export default function PolicyAssessmentBackend() {
   const [params] = useSearchParams();
+  const navigate = useNavigate();
   const caseId = params.get('case'), investigationId = params.get('investigation');
   const [plans, setPlans] = useState([]), [assessments, setAssessments] = useState([]);
-  const [loading, setLoading] = useState(true), [running, setRunning] = useState(false), [error, setError] = useState('');
+  const [loading, setLoading] = useState(true), [running, setRunning] = useState(false), [submitting, setSubmitting] = useState(false), [error, setError] = useState('');
   useEffect(() => {
     if (!caseId || !investigationId) { setLoading(false); return; }
     const controller = new AbortController();
@@ -47,8 +53,24 @@ export default function PolicyAssessmentBackend() {
   const requested = params.get('plan'), requestedVersion = params.get('version');
   const currentPlan = plans.at(-1);
   const plan = plans.find(item => item.planId === requested && String(item.version) === requestedVersion) || currentPlan;
-  const assessment = useMemo(() => [...assessments].reverse().find(item => item.planId === plan?.planId), [assessments, plan]);
+  const assessment = useMemo(() => [...assessments].reverse().find(item =>
+    item.planId === plan?.planId && item.policyVersion === currentPolicyVersion), [assessments, plan]);
   const back = plansPath + contextSearch(params);
+  const communicationControl = assessment?.controls.find(control => control.id === 'communication');
+  const approvalControl = assessment?.controls.find(control => control.id === 'approval');
+  const communicationNeeded = communicationControl?.status === 'REVIEW_REQUIRED';
+  const approvalReady = Boolean(assessment && approvalControl?.status === 'APPROVAL_REQUIRED' &&
+    assessment.controls.filter(control => control.id !== 'approval').every(control =>
+      control.status === 'PASS' || control.status === 'NOT_REQUIRED'));
+  const workflowContext = contextSearch(new URLSearchParams({ case: caseId || '', investigation: investigationId || '' }));
+  const communicationTo = communicationPath + workflowContext;
+  async function submitApproval() {
+    if (!assessment || submitting) return;
+    setSubmitting(true); setError('');
+    try { const request = await submitApprovalRequest(assessment.assessmentId); navigate(`${approvalPath}?request=${encodeURIComponent(request.requestId)}`); }
+    catch (failure) { setError(failure.message); }
+    finally { setSubmitting(false); }
+  }
   async function run() {
     if (!plan || running) return;
     setRunning(true); setError('');
@@ -82,6 +104,16 @@ export default function PolicyAssessmentBackend() {
       </section>
       {assessments.length > 0 && <details className="pa-panel pa-history"><summary>Assessment history · {assessments.length}</summary><ul>{[...assessments].reverse().map(item =>
         <li key={item.assessmentId}><strong>Plan V{item.planVersion} · {humanize(item.status)}</strong><time>{displayTime(item.evaluatedAt)}</time><code>{item.assessmentId}</code></li>)}</ul></details>}
+      {communicationNeeded && <section className="pa-panel pa-next" aria-labelledby="pa-communication-next">
+        <div><h2 id="pa-communication-next">Customer communication required</h2>
+          <p>Complete the required customer notification, then return and re-evaluate this policy assessment.</p></div>
+        <Link className="rp-button rp-primary" to={communicationTo}><MessageSquare size={16} aria-hidden="true"/>Open Customer Communication<ArrowRight size={16} aria-hidden="true"/></Link>
+      </section>}
+      {approvalReady && <section className="pa-panel pa-next" aria-labelledby="pa-approval-next">
+        <div><h2 id="pa-approval-next">Ready for administrator approval</h2>
+          <p>All prerequisite controls have passed. Continue to the Approval Center to request an authorised decision.</p></div>
+        <button className="rp-button rp-primary" type="button" disabled={submitting} onClick={submitApproval}><UserCheck size={16} aria-hidden="true"/>{submitting ? 'Submitting…' : 'Request Administrator Approval'}<ArrowRight size={16} aria-hidden="true"/></button>
+      </section>}
     </>}
   </div>;
 }

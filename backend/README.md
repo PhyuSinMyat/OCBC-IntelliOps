@@ -118,6 +118,24 @@ deterministic: it evaluates six server controls and appends a historical result.
 These endpoints never post, reverse, refund, close, or otherwise mutate payment
 and ledger records. Tests use mocked provider transports and never make paid calls.
 
+## Persistent approval requests
+
+Migration `20261120_12` adds the durable `approval_requests` table. The active
+Approval Center uses these authenticated endpoints instead of browser session
+storage:
+
+- `GET/POST /api/approval-requests`
+- `GET /api/approval-requests/{request_id}`
+- `POST /api/approval-requests/{request_id}/decision`
+
+Submission is idempotent per policy assessment. The backend accepts only the
+latest current `RESOLUTION_POLICY_V2` assessment when every prerequisite control
+has passed. Administrator decisions revalidate the accepted investigation,
+source-evidence fingerprint, resolution-plan version, customer-context revision,
+case state, and policy controls under a row lock. Requests and final decisions are
+audited. A decision records authorization for a later controlled workflow step;
+it does not execute a payment, refund, reversal, ledger posting, or case closure.
+
 ## Outbound customer email
 
 Migration `20261119_10` removes the simulation-only communication constraint and

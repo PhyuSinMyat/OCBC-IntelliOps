@@ -23,7 +23,8 @@ class MissingLedgerInvestigationTests(unittest.TestCase):
 
     def setUp(self):
         self.setUpDatabase()
-        self.clock = patch.dict(os.environ, {'INTELLIOPS_SIMULATION_TIME': '2026-11-03T03:00:00+00:00'})
+        self.clock = patch.dict(os.environ, {'INTELLIOPS_SIMULATION_TIME': '2026-11-03T03:00:00+00:00',
+                                             'INTELLIOPS_INVESTIGATION_PERSISTENCE': 'false'})
         self.clock.start()
         def get_test_db():
             with Session(self.engine) as db:

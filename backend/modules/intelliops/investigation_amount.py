@@ -17,9 +17,10 @@ from .investigation_validation import validate_monetary_claims
 from .service import CaseError, get_case
 
 
-def retrieve_amount_evidence(db, case_id):
+def retrieve_amount_evidence(db, case_id, allowed_types=None):
     case = get_case(db, case_id)
-    if case.exception_type not in {'Amount Mismatch', 'AMOUNT_MISMATCH'}:
+    supported = allowed_types or {'Amount Mismatch', 'AMOUNT_MISMATCH'}
+    if case.exception_type not in supported:
         raise CaseError('This collector supports only Amount Mismatch cases.', 409)
     payment = db.get(Transaction, case.transaction_id)
     if payment is None:

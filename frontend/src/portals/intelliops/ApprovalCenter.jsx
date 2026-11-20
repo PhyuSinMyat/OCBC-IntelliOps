@@ -11,7 +11,7 @@ import { resolutionCustomerResponses, resolutionIncidentNotifications, responseT
 import { assessmentApplies, evaluatePolicy, getPolicyActivity, policyActionLabel, resolvePolicyContext } from './resolution/policyDemoService.js';
 import { readResolutionCase } from './resolution/resolutionData.js';
 import { pendingResolutionResponses } from './resolution/resolutionPlannerService.js';
-import ApprovalWalkthroughButton, { approvalWalkthroughEvidence } from './resolution/approvalWalkthrough.jsx';
+import { approvalWalkthroughEvidence } from './resolution/approvalWalkthrough.jsx';
 import './approval-center.css';
 
 const root = '/intelliops/approvals';
@@ -181,7 +181,7 @@ function CustomerContext({ request }) {
     <p>{request.plan ? `${request.plan.customerSnapshot.responses.length} customer replies included in the submitted plan.` : 'Submitted customer snapshot unavailable.'}</p>
     {newReplies.length > 0 && <p className="ac-warning" role="status">New customer input is absent from the submitted snapshot. Reassess and resubmit the current plan before recording a decision.</p>}
     {latest && <div className="ac-reply">
-      <strong>{responseTypes[latest.communicationType] || 'Simulated customer reply'}</strong>
+      <strong>{responseTypes[latest.communicationType] || 'Customer email reply'}</strong>
       <p><time dateTime={latest.createdAt}>{displayTime(latest.createdAt)}</time> · Simulated</p>
       <p>{!request.plan ? 'Response inclusion unavailable' : newReplies.some(reply => reply.id === latest.id) ? 'Latest reply not included in submitted plan' : 'Latest reply included in submitted plan'}</p>
       <p className="ac-reply-preview">{latest.body}</p>
@@ -341,6 +341,6 @@ export default function ApprovalCenter() {
         <Link className="rp-button" to={workflow + '/policy?' + params.toString()}>Back to Policy Assessment</Link></section> :
       reviewing ? <section className="ac-panel ac-empty"><TriangleAlert size={24} aria-hidden="true"/>
         <h2>Approval request unavailable</h2><p>The link does not identify a saved approval request in this session.</p><Link className="rp-button" to={root}>Back to approval queue</Link></section> :
-        <><div><ApprovalWalkthroughButton/></div><Queue requests={listApprovalRequests()} cases={banking.exception_cases || []}/></>}
+        <Queue requests={listApprovalRequests()} cases={banking.exception_cases || []}/>}
   </div>;
 }

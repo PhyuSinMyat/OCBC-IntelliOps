@@ -18,5 +18,5 @@ def actor(credentials: HTTPAuthorizationCredentials | None = Depends(bearer)):
 
 def administrator(role=Depends(actor)):
     if role != "ADMIN":
-        raise HTTPException(403, "Only ADMIN may inject exception scenarios.")
+        raise HTTPException(403, "Only ADMIN may perform this operation.")
     return role

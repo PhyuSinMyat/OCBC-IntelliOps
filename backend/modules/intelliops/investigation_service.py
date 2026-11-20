@@ -14,6 +14,9 @@ def investigate(evidence, provider):
     if evidence.get('snapshot', {}).get('caseRecord', {}).get('exceptionType') in {'Missing Ledger Posting', 'MISSING_LEDGER_POSTING'}:
         from .investigation_missing import investigate_missing
         return investigate_missing(evidence, provider)
+    from .investigation_generic import GENERIC_TYPES, investigate_generic
+    if evidence.get('snapshot', {}).get('caseRecord', {}).get('exceptionType') in GENERIC_TYPES:
+        return investigate_generic(evidence, provider)
     return investigate_duplicate(evidence, provider)
 
 

@@ -58,11 +58,24 @@ def require_enabled():
         raise CaseError('Durable investigation history is not enabled. Deploy the approved SQL and enable INTELLIOPS_INVESTIGATION_PERSISTENCE before using saved history.', 503)
 
 
-def fingerprint(evidence, case_status=None):
+def fingerprint(evidence):
+    return _fingerprint(evidence, exclude_workflow_status=False)
+
+
+def material_fingerprint(evidence):
+    """Hash investigation facts while ignoring mutable case-workflow status.
+
+    Case status is enforced independently by workflow/action policy. Including it
+    here made OPEN -> IN_PROGRESS look like changed payment or ledger evidence.
+    """
+    return _fingerprint(evidence, exclude_workflow_status=True)
+
+
+def _fingerprint(evidence, exclude_workflow_status):
     data = model_evidence(evidence)
-    if case_status is not None:
-        data['snapshot']['caseRecord']['status'] = case_status
     data.pop('retrieved_at', None)
+    if exclude_workflow_status:
+        data.get('snapshot', {}).get('caseRecord', {}).pop('status', None)
     def canonical(value):
         if isinstance(value, dict): return {k: canonical(v) for k, v in value.items()}
         if isinstance(value, list):
@@ -71,14 +84,19 @@ def fingerprint(evidence, case_status=None):
     return hashlib.sha256(json.dumps(canonical(data), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
-def compatible_fingerprints(evidence):
-    current = fingerprint(evidence)
-    status = evidence['snapshot']['caseRecord']['status']
-    # An administrative progress transition does not change the source evidence.
-    compatible = {current}
-    if status in {'IN_PROGRESS', 'IN_REVIEW'}:
-        compatible.update(fingerprint(evidence, prior) for prior in ('OPEN', 'IN_REVIEW', 'IN_PROGRESS') if prior != status)
-    return current, compatible
+def report_evidence(report):
+    """Rebuild the persisted factual evidence contract without a provider call."""
+    financial = report.get('financial_execution_assessment') or {}
+    return dict(snapshot=report.get('supporting_evidence'),
+        financial_impact=report.get('financial_impact'),
+        evidence_references=report.get('evidence_references'),
+        retrieved_at=report.get('evidence_snapshot_at'),
+        verified_assessment=dict(financial_classification=financial.get('classification'),
+            original=financial.get('original'), duplicate=financial.get('duplicate')))
+
+
+def materially_matches(report, evidence):
+    return bool(report and material_fingerprint(report_evidence(report)) == material_fingerprint(evidence))
 
 
 def reserve(db, case_id, request_id, role, evidence):
@@ -151,7 +169,8 @@ def history(db, case_id, limit=20, offset=0, investigation_id=None):
 def import_accepted_report(db, saved, role='ADMIN'):
     """Explicit administrative import, locally revalidated; NEVER calls OpenAI."""
     from uuid import uuid5, NAMESPACE_URL
-    from .investigation_schemas import ModelInvestigation, AmountMismatchModelInvestigation, MissingLedgerModelInvestigation
+    from .investigation_schemas import (ModelInvestigation, AmountMismatchModelInvestigation,
+        MissingLedgerModelInvestigation, GenericExceptionModelInvestigation)
     from .investigation_service import investigate
     require_enabled()
     if saved.get('prototype') is not False or saved.get('run_status') != 'COMPLETED':
@@ -162,7 +181,10 @@ def import_accepted_report(db, saved, role='ADMIN'):
         verified_assessment=dict(financial_classification=financial['classification'],
                                  original=financial['original'], duplicate=financial['duplicate']))
     schema = (AmountMismatchModelInvestigation if saved.get('exception_type') == 'AMOUNT_MISMATCH' else
-              MissingLedgerModelInvestigation if saved.get('exception_type') == 'MISSING_LEDGER_POSTING' else ModelInvestigation)
+              MissingLedgerModelInvestigation if saved.get('exception_type') == 'MISSING_LEDGER_POSTING' else
+              GenericExceptionModelInvestigation if saved.get('exception_type') in {
+                  'PAYMENT_PROCESSING_FAILURE', 'UNMATCHED_TRANSACTION', 'INVALID_LEDGER_POSTING',
+                  'LEDGER_ACCOUNT_MISMATCH', 'LEDGER_CURRENCY_MISMATCH', 'PROCESSING_TIMEOUT'} else ModelInvestigation)
     candidate = schema.model_validate(saved['llm_analysis'])
     class SavedAnalysis:
         def analyze(self, data): return candidate, saved['model']

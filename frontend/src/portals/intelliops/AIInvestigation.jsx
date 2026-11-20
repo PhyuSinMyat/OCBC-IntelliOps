@@ -4,11 +4,11 @@ import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-do
 import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, FileSearch, FlaskConical, History, LoaderCircle, RotateCcw, TriangleAlert } from 'lucide-react';
 import RecordDrawer from '../../shared/components/RecordDrawer.jsx';
 import { accounts, backendConnected, fetchExceptionCase, refreshBackend, useBankingRecords } from '../../shared/data/bankingRecords.js';
-import { isAmountMismatch, isDuplicate, isMissingLedger, relatedPayments, stages } from './investigation/analysis.js';
+import { isAmountMismatch, isDuplicate, isGenericException, isMissingLedger, relatedPayments, stages } from './investigation/analysis.js';
 import { developmentFixture, fixtureOptions } from './investigation/fixtures.js';
-import { getRuns, investigationKey, investigationRevision, loadPersistedInvestigations, sendToResolution, startInvestigation, subscribeInvestigations } from './investigation/service.js';
+import { getRuns, investigationKey, investigationRevision, loadPersistedInvestigations, persistBackendInvestigation, sendToResolution, startInvestigation, subscribeInvestigations } from './investigation/service.js';
 import { displayTime, humanize, InvestigationTrace, Section, SourceLink } from './investigation/ReportSections.jsx';
-import { AmountReconciliation, CausalTimeline, DiagnosisHero, EvidenceExplorer, ExecutionPaths, FinancialImpact, KeyResults, MissingLedgerVerification, NextBestAction, ReadyAmountInvestigation, ReadyInvestigation, ReadyMissingLedgerInvestigation, StageDetails, ModelFindings } from './investigation/CommandCenter.jsx';
+import { AmountReconciliation, CausalTimeline, DiagnosisHero, EvidenceExplorer, ExecutionPaths, FinancialImpact, GenericExceptionVerification, KeyResults, MissingLedgerVerification, NextBestAction, ReadyAmountInvestigation, ReadyGenericInvestigation, ReadyInvestigation, ReadyMissingLedgerInvestigation, StageDetails, ModelFindings } from './investigation/CommandCenter.jsx';
 import { AnalystAttention, CitationExplorer, EvidencePanel, FinancialOverview, InvestigationSkeleton, KeyTimeline, PaymentRelationshipFlow, SavedHistory } from './investigation/WorkspaceSections.jsx';
 import './investigation.css';
 import './investigation-refinement.css';
@@ -90,7 +90,7 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
   const running = latest && ['QUEUED', 'COLLECTING_EVIDENCE', 'ANALYZING'].includes(latest.run_status);
   const report = viewed?.run_status === 'COMPLETED' ? viewed.report : null;
   const amountMismatch = isAmountMismatch(selected);
-  const missingLedger = isMissingLedger(selected), singlePayment = amountMismatch || missingLedger;
+  const missingLedger = isMissingLedger(selected), genericException = isGenericException(selected), singlePayment = amountMismatch || missingLedger || genericException;
   const supported = isDuplicate(selected) || (singlePayment && backendConnected && !fixture);
   const { original, duplicate } = selected ? relatedPayments(selected, records) : {};
   const fallback = selected && !fixture ? `/intelliops/exceptions?case=${encodeURIComponent(selected.id)}` : '/intelliops/exceptions';
@@ -112,8 +112,11 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
       }
     }
   }
-  function handoff() {
+  async function handoff() {
     try {
+      if (viewed?.prototype === false && !viewed.durable) {
+        await persistBackendInvestigation(keyValue, report.investigation_id);
+      }
       const result = sendToResolution(keyValue, report.investigation_id);
       navigate(`/intelliops/workflows?case=${encodeURIComponent(result.case_id)}&investigation=${encodeURIComponent(result.investigation_id)}`);
     } catch (e) { setError(e.message); }
@@ -127,7 +130,7 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
     {!selected || invalidFixture ? <><Section title={location.search ? 'Investigation unavailable' : 'No Investigation Selected'} className="inv-empty"><FileSearch size={36}/><p>{location.search ? 'The selected case or development fixture is unavailable in the current dataset.' : 'Choose an exception from Exception Center to begin investigating its underlying cause.'}</p><Link className="inv-button inv-primary" to="/intelliops/exceptions">Browse Exceptions<ArrowRight size={15}/></Link></Section><DevelopmentExamples/></> : <>
       <div className="cc-prototype-note"><FlaskConical size={14}/><strong>{fixture ? `Development fixture · ${fixtureOptions[fixture.fixture]}` : backendConnected ? 'Backend AI investigation' : 'Prototype investigation adapter'}</strong><span>{backendConnected && !fixture ? 'Database evidence · Structured model analysis · Saved investigation history' : 'Deterministic simulation · No live LLM'}</span></div>
       <header className="inv-case-header cc-case-header"><div className="inv-case-top"><div><div className="cc-case-reference"><span>{selected.id}</span><span className={`cc-severity ${selected.severity?.toUpperCase() === 'HIGH' ? 'cc-high' : ''}`}>{humanize(selected.severity)} severity</span></div><h2>{isDuplicate(selected) ? 'Potential Duplicate Transaction' : selected.exceptionType}</h2><div className="inv-related">{isDuplicate(selected) && <><SourceLink reference={original?.id} fixture={fixture?.fixture}/><span className="cc-reference-divider">/</span></>}<SourceLink reference={duplicate?.id || selected.transactionId} fixture={fixture?.fixture}/></div></div><div className="inv-header-actions">{caseDetails}<button className="inv-button cc-history-button" onClick={() => setTab('history')}><History size={15}/>View Investigation History</button></div></div><div className="cc-case-footer"><span>Case status <CaseStatus value={selected.status}/></span><span>Investigation <strong>{latest ? humanize(latest.run_status) : 'Ready to investigate'}</strong></span><details><summary>Case metadata</summary><p>Assigned analyst: {selected.assignedTo || 'Unassigned'}</p><p>Detected: {displayTime(selected.createdAt)}</p></details></div></header>
-      {!supported ? <Section title="Investigation not yet supported"><p>This workspace supports Duplicate Transaction, Amount Mismatch and Missing Ledger Posting cases.</p>{caseDetails}</Section> : <>
+      {!supported ? <Section title="Investigation not yet supported"><p>This exception type does not yet have a backend evidence collector.</p>{caseDetails}</Section> : <>
         {error && <p className="inv-error" role="alert">{error}</p>}
         {historical && <div className="inv-history-banner"><span>Read-only previous report · {viewed.investigation_id}</span><button className="inv-button" onClick={() => setViewedId(null)}>Return to latest report</button></div>}
         <div className="iw-tabs" role="tablist" aria-label="Investigation views">{[['summary', 'Summary'], ['evidence', 'Evidence'], ['history', 'History']].map(([id, label], index) => <button key={id} id={`iw-tab-${id}`} type="button" role="tab" aria-selected={tab === id} aria-controls={`iw-panel-${id}`} tabIndex={tab === id ? 0 : -1} onClick={() => setTab(id)} onKeyDown={e => { if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) { e.preventDefault(); const ids = ['summary', 'evidence', 'history']; const next = e.key === 'Home' ? 0 : e.key === 'End' ? 2 : (index + (e.key === 'ArrowRight' ? 1 : 2)) % 3; setTab(ids[next]); document.getElementById('iw-tab-' + ids[next])?.focus(); } }}>{label}{id === 'history' && <span>{runs.length}</span>}</button>)}</div>
@@ -140,12 +143,12 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
         {historyLoading && <InvestigationSkeleton/>}
         {historyError && <p className="inv-error" role="alert">Saved history unavailable: {historyError}</p>}
         {tab === 'evidence' && !report && <Section title="No accepted evidence report"><p>A completed investigation is needed to explore its reasoning and saved sources. Return to Summary to review the investigation status.</p></Section>}
-        {tab === 'summary' && !viewed && !historyLoading && (amountMismatch ? <ReadyAmountInvestigation payment={duplicate} accounts={accountList} fixture={fixture?.fixture} onStart={() => run()}/> : missingLedger ? <ReadyMissingLedgerInvestigation payment={duplicate} accounts={accountList} fixture={fixture?.fixture} onStart={() => run()}/> : <ReadyInvestigation {...{ original, duplicate, accounts: accountList, fixture: fixture?.fixture }} onStart={() => run()}/>)}
+        {tab === 'summary' && !viewed && !historyLoading && (amountMismatch ? <ReadyAmountInvestigation payment={duplicate} accounts={accountList} fixture={fixture?.fixture} onStart={() => run()}/> : missingLedger ? <ReadyMissingLedgerInvestigation payment={duplicate} accounts={accountList} fixture={fixture?.fixture} onStart={() => run()}/> : genericException ? <ReadyGenericInvestigation payment={duplicate} accounts={accountList} fixture={fixture?.fixture} exceptionType={selected.exceptionType} onStart={() => run()}/> : <ReadyInvestigation {...{ original, duplicate, accounts: accountList, fixture: fixture?.fixture }} onStart={() => run()}/>)}
         {tab === 'summary' && viewed && !report && <><div className="inv-run-status" role="status">{running ? <LoaderCircle className="inv-spinner" size={17}/> : <TriangleAlert size={17}/>}<span>{humanize(viewed.run_status)} · {viewed.stage_index >= 0 ? stages[viewed.stage_index][0] : 'Waiting to collect evidence'}</span></div><Progress run={viewed}/>{viewed.run_status === 'FAILED' && <Section title="Investigation could not be completed" className="inv-failure"><p role="alert">{viewed.error}</p><p>No diagnosis produced. Your case is unchanged.</p><button className="inv-button inv-primary" onClick={() => run(true)} disabled={running}><RotateCcw size={15}/>Retry Investigation</button></Section>}</>}
         {report && <>
           {tab === 'summary' && <>
             <div className="iw-summary-grid"><div><DiagnosisHero {...{ report, onTrace }}/><FinancialOverview report={report}/></div><NextBestAction {...{ report, historical, running }} onSend={handoff} onRun={() => run()}/></div>
-            {amountMismatch ? <AmountReconciliation report={report}/> : missingLedger ? <MissingLedgerVerification report={report}/> : <PaymentRelationshipFlow report={report}/>}<KeyTimeline report={report} onEvidence={onTrace} {...{ onInspect }}/>
+            {amountMismatch ? <AmountReconciliation report={report}/> : missingLedger ? <MissingLedgerVerification report={report}/> : genericException ? <GenericExceptionVerification report={report}/> : <PaymentRelationshipFlow report={report}/>}<KeyTimeline report={report} onEvidence={onTrace} {...{ onInspect }}/>
             <AnalystAttention {...{ report, viewed }}/>
           </>}
           {tab === 'evidence' && <>
@@ -154,9 +157,9 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
             <EvidencePanel id="iw-reasoning" title="AI reasoning" subtitle="Original diagnosis, supported findings and unconfirmed hypotheses" open>
               <section className="inv-section"><p className="inv-kicker">AI interpretation · human review required</p><h2>Why this happened</h2><h3>{report.root_cause_title}</h3><p>{report.root_cause_explanation}</p><details><summary>Classification and uncertainty</summary><p className="inv-kicker">{report.root_cause_code} · {report.diagnosis_classification}</p>{(report.unresolved_questions || []).map((q, i) => <p key={i}>{q}</p>)}</details></section><ModelFindings report={report}/>
             </EvidencePanel>
-            <EvidencePanel id="iw-execution" title="Payment Execution" subtitle={amountMismatch ? 'Reconcile the payment instruction with verified ledger totals' : missingLedger ? 'Verify source completion against modern and legacy ledger records' : 'Compare original and related payment stages · select a stage to inspect its evidence'}>{amountMismatch ? <AmountReconciliation report={report}/> : missingLedger ? <MissingLedgerVerification report={report}/> : <ExecutionPaths {...{ report, onInspect }}/>}</EvidencePanel>
+            <EvidencePanel id="iw-execution" title="Payment Execution" subtitle={singlePayment ? 'Verify the payment, operational events and current ledger records' : 'Compare original and related payment stages · select a stage to inspect its evidence'}>{amountMismatch ? <AmountReconciliation report={report}/> : missingLedger ? <MissingLedgerVerification report={report}/> : genericException ? <GenericExceptionVerification report={report}/> : <ExecutionPaths {...{ report, onInspect }}/>}</EvidencePanel>
             <EvidencePanel id="iw-events" title="Processing timeline" subtitle={report.investigation_trace.length + ' recorded events · expandable event details'}><InvestigationTrace report={report}/></EvidencePanel>
-            <EvidencePanel id="iw-ledger" title="Ledger verification & records" subtitle="Financial assessment, payment comparisons and complete source records"><FinancialOverview report={report}/>{amountMismatch ? <AmountReconciliation report={report}/> : missingLedger ? <MissingLedgerVerification report={report}/> : <FinancialImpact report={report}/>}<EvidenceExplorer {...{ report, onInspect }}/></EvidencePanel>
+            <EvidencePanel id="iw-ledger" title="Ledger verification & records" subtitle="Financial assessment, payment comparisons and complete source records"><FinancialOverview report={report}/>{amountMismatch ? <AmountReconciliation report={report}/> : missingLedger ? <MissingLedgerVerification report={report}/> : genericException ? <GenericExceptionVerification report={report}/> : <FinancialImpact report={report}/>}<EvidenceExplorer {...{ report, onInspect }}/></EvidencePanel>
             <EvidencePanel id="iw-sources" title="Source evidence explorer" subtitle="Search and inspect the citations supporting this report"><CitationExplorer report={report}/></EvidencePanel>
             <details className="inv-section iw-raw-report"><summary>Complete saved investigation report</summary><pre>{JSON.stringify(report, null, 2)}</pre></details>
           </>}

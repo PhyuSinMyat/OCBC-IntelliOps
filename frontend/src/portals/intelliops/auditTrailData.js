@@ -1,9 +1,6 @@
 ﻿import { exceptionRequest } from '../../shared/api/banking.js';
 import { fetchExceptionCase } from '../../shared/data/bankingRecords.js';
 import { readInvestigationAuditRuns } from './investigation/service.js';
-import { readCommunicationAuditRecords } from './resolution/communicationService.js';
-import { readResolutionAuditVersions } from './resolution/resolutionPlannerService.js';
-import { getPolicyActivity, listPolicyCaseIds } from './resolution/policyDemoService.js';
 
 export const BACKEND = 'Backend Record';
 export const SIMULATION = 'Frontend Simulation';
@@ -31,6 +28,12 @@ const operations = {
   DUPLICATE_REJECTED: ['Duplicate rejected', 'Exception', 'The case log records rejection of a duplicate request.'],
   PAYMENT_CREATED: ['Payment created', 'Financial', 'A payment creation was recorded.'],
   PAYMENT_POSTING_FAILED: ['Payment posting failed', 'Financial', 'The source audit records a failed posting.'],
+  RESOLUTION_PLAN_CREATED: ['Resolution plan created', 'Resolution', 'A durable resolution plan version was recorded.'],
+  RESOLUTION_PLAN_REASSESSED: ['Resolution plan reassessed', 'Resolution', 'A new durable resolution plan version was recorded.'],
+  CUSTOMER_NOTIFICATION_RECORDED: ['Customer notification recorded', 'Communication', 'An outgoing customer communication was persisted.'],
+  CUSTOMER_RESPONSE_RECORDED: ['Legacy customer response recorded', 'Communication', 'A legacy response record was persisted.'],
+  CUSTOMER_EMAIL_REPLY_IMPORTED: ['Customer email reply imported', 'Communication', 'A linked customer reply was imported from Gmail and persisted.'],
+  POLICY_ASSESSMENT_COMPLETED: ['Policy assessment completed', 'Policy', 'A deterministic backend policy assessment was persisted.'],
 };
 
 function displayEvent(key, id, properties) {
@@ -194,7 +197,7 @@ function policyEvents() {
 
 export function normalizeAuditEvents(records, caseHistories) {
   return [...new Map([
-    ...bankAudit(records), ...sessionInvestigations(), ...resolutionEvents(), ...communicationEvents(), ...policyEvents(),
+    ...bankAudit(records), ...sessionInvestigations(),
     ...caseHistories.flatMap(scoped => [
       ...(scoped.caseRecord?.timeline || []).filter(item => item.id != null).map(item =>
         operationEvent('case-action:' + scoped.caseRecord.id, item, scoped.caseRecord.id, BACKEND)),

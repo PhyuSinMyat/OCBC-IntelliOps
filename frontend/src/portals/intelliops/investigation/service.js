@@ -59,7 +59,7 @@ export async function loadPersistedInvestigations(key, caseId, { offset = 0, inv
 }
 
 export async function startInvestigation({ key, caseRecord, records, accounts, fixture, failEvidence = false, mode }) {
-  if (!isInvestigable(caseRecord)) throw new Error('AI investigation supports Duplicate Transaction, Amount Mismatch and Missing Ledger Posting cases.');
+  if (!isInvestigable(caseRecord)) throw new Error('This exception type does not have a backend AI evidence collector.');
   if (!['backend', 'prototype'].includes(mode)) throw new Error('Select an explicit backend or prototype investigation mode.');
   if (isAmountMismatch(caseRecord) && mode !== 'backend') throw new Error('Amount Mismatch investigation requires the backend evidence collector.');
   if (isMissingLedger(caseRecord) && mode !== 'backend') throw new Error('Missing Ledger Posting investigation requires the backend evidence collector.');
@@ -125,6 +125,9 @@ async function startBackendInvestigation(key, caseRecord) {
 export function sendToResolution(key, investigationId) {
   const run = getRuns(key).find(r => r.investigation_id === investigationId);
   if (run?.run_status !== 'COMPLETED' || !run.report) throw new Error('A completed investigation is required.');
+  if (run.prototype === false && !run.durable) {
+    throw new Error('This backend investigation was not saved durably. Reopen a backend-saved report from history before sending it to Resolution.');
+  }
   const id = run.investigation_id;
   const handoff = structuredClone({ ...run.report, evidence_references: run.report.evidence_references || [
     ...run.snapshot.events.map(e => `event:${e.id}`), ...run.snapshot.journals.map(j => `journal:${j.id}`),
@@ -135,4 +138,20 @@ export function sendToResolution(key, investigationId) {
   try { persist(); } catch { if (previous) saved.handoffs[id] = previous; else delete saved.handoffs[id]; throw new Error('Unable to save Resolution handoff. Enable session storage and retry.'); }
   notify();
   return handoff;
+}
+
+export async function persistBackendInvestigation(key, investigationId) {
+  const run = getRuns(key).find(item => item.investigation_id === investigationId);
+  if (!run?.report || run.prototype !== false || run.run_status !== 'COMPLETED') {
+    throw new Error('A completed backend investigation is required.');
+  }
+  if (run.durable) return run.report;
+  const report = await exceptionRequest(`/api/exceptions/${encodeURIComponent(run.case_id)}/investigations/import`, {
+    method: 'POST', body: { report: run.report },
+  });
+  Object.assign(run, { report, durable: report.persistence === 'BACKEND_DATABASE', snapshot: report.supporting_evidence,
+    evidence_snapshot_at: report.evidence_snapshot_at, completed_at: report.completed_at });
+  if (!run.durable) throw new Error('The investigation import did not return a durable report.');
+  persist(); notify();
+  return report;
 }

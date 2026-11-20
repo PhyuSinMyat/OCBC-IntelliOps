@@ -10,6 +10,7 @@ export const resolutionStages = [
 
 const examples = {
   ESCALATE_DUPLICATE_FINANCIAL_EXECUTION: {
+    exceptionType: 'DUPLICATE_TRANSACTION',
     diagnosis: 'CONFIRMED_DUPLICATE_REQUEST',
     classification: 'DOUBLE_POSTING_CONFIRMED',
     journalCount: 2,
@@ -42,6 +43,7 @@ const examples = {
     uncertainty: ['The appropriate accounting action and customer impact require separate verification and authorisation.'],
   },
   CLOSE_HELD_DUPLICATE: {
+    exceptionType: 'DUPLICATE_TRANSACTION',
     diagnosis: 'CONFIRMED_DUPLICATE_REQUEST',
     classification: 'SINGLE_POSTING_CONFIRMED',
     journalCount: 1,
@@ -62,6 +64,7 @@ const examples = {
     uncertainty: ['The repeat’s current state must be confirmed before closure.'],
   },
   REVIEW_FALSE_POSITIVE_CLOSURE: {
+    exceptionType: 'DUPLICATE_TRANSACTION',
     diagnosis: 'LEGITIMATE_SEPARATE_INSTRUCTIONS',
     classification: 'DOUBLE_POSTING_CONFIRMED',
     journalCount: 2,
@@ -81,13 +84,88 @@ const examples = {
     approvalRecommendation: { required: true, suggestedRole: 'Authorised case reviewer', reason: 'Closure should be supported by the distinct authorisations and matched postings.' },
     uncertainty: ['The current status of both payments and any customer dispute remain subject to review.'],
   },
+  REVIEW_SHORTFALL_ADJUSTMENT: {
+    exceptionType: 'AMOUNT_MISMATCH',
+    diagnosis: 'CONFIRMED_AMOUNT_MISMATCH',
+    classification: 'UNDERPOSTING_CONFIRMED',
+    journalCount: 1,
+    resolutionTitle: 'Review Posting Shortfall Adjustment',
+    summary: 'The accepted investigation confirms that the posted amount is below the instructed amount. Prepare the verified difference for controlled adjustment review without changing the ledger automatically.',
+    steps: [
+      ['verify', 'Verify the instructed and posted amounts', 'Reconcile the source instruction with the linked posted journal and confirm the signed shortfall.', ['payment', 'instruction', 'journal']],
+      ['cause', 'Review the mismatch cause', 'Review the cited processing evidence and preserve any uncertainty about why the partial amount was posted.', ['event', 'payment']],
+      ['impact', 'Assess customer and ledger impact', 'Confirm the affected accounts, currency, and current ledger state before proposing an adjustment.', ['payment', 'journal']],
+      ['prepare', 'Prepare the shortfall adjustment review', 'Document the verified difference and route it for authorised financial operations review.', ['journal']],
+      ['approve', 'Route for administrator review', 'Apply deterministic policy checks and require authorised approval before any accounting action.', []],
+      ['audit', 'Record the decision and verification', 'Retain the evidence, decision, and post-decision verification in the audit history.', []],
+    ],
+    customerCommunication: {
+      recommended: true,
+      reason: 'The instructed and posted amounts differ. Review customer impact and communication requirements before taking action.',
+      suggestedMessageType: 'Amount discrepancy status update',
+    },
+    financialConsiderations: ['Use the signed difference from the accepted report and revalidate the current ledger before any adjustment.'],
+    risksAndSafeguards: ['Prevent duplicate or excessive adjustments by checking prior actions.', 'Require current-ledger verification, deterministic policy review, and authorised approval.', 'Do not post an adjustment automatically.'],
+    approvalRecommendation: { required: true, suggestedRole: 'Admin', reason: 'A ledger adjustment requires authorised financial review and independent verification.' },
+    uncertainty: ['The appropriate accounting treatment and customer impact require separate verification and authorisation.'],
+  },
+  REVIEW_OVERPOSTING_CORRECTION: {
+    exceptionType: 'AMOUNT_MISMATCH',
+    diagnosis: 'CONFIRMED_AMOUNT_MISMATCH',
+    classification: 'OVERPOSTING_CONFIRMED',
+    journalCount: 1,
+    resolutionTitle: 'Review Amount Overposting Correction',
+    summary: 'The accepted investigation confirms that the posted amount exceeds the instructed amount. Prepare the verified difference for controlled correction review without changing the ledger automatically.',
+    steps: [
+      ['verify', 'Verify the instructed and posted amounts', 'Reconcile the source instruction with the linked posted journal and confirm the signed overposting.', ['payment', 'instruction', 'journal']],
+      ['cause', 'Review the mismatch cause', 'Review the cited processing evidence and preserve any uncertainty about why the excess amount was posted.', ['event', 'payment']],
+      ['impact', 'Assess customer and ledger impact', 'Confirm the affected accounts, currency, and current ledger state before proposing a correction.', ['payment', 'journal']],
+      ['prepare', 'Prepare the overposting correction review', 'Document the verified difference and route it for authorised financial operations review.', ['journal']],
+      ['approve', 'Route for administrator review', 'Apply deterministic policy checks and require authorised approval before any accounting action.', []],
+      ['audit', 'Record the decision and verification', 'Retain the evidence, decision, and post-decision verification in the audit history.', []],
+    ],
+    customerCommunication: {
+      recommended: true,
+      reason: 'The instructed and posted amounts differ. Review customer impact and communication requirements before taking action.',
+      suggestedMessageType: 'Amount discrepancy status update',
+    },
+    financialConsiderations: ['Use the signed difference from the accepted report and revalidate the current ledger before any correction.'],
+    risksAndSafeguards: ['Prevent an incorrect reversal by checking the current ledger and prior actions.', 'Require deterministic policy review and authorised approval.', 'Do not post a correction automatically.'],
+    approvalRecommendation: { required: true, suggestedRole: 'Admin', reason: 'A financial correction requires authorised review and independent verification.' },
+    uncertainty: ['The appropriate accounting treatment and customer impact require separate verification and authorisation.'],
+  },
+  REVIEW_MISSING_POSTING_REMEDIATION: {
+    exceptionType: 'MISSING_LEDGER_POSTING',
+    diagnosis: 'CONFIRMED_MISSING_POSTING',
+    classification: 'NO_POSTING_RECORD_CONFIRMED',
+    journalCount: 0,
+    resolutionTitle: 'Review Missing Ledger Posting Remediation',
+    summary: 'The accepted investigation found no posting record in the checked modern and legacy sources. Prepare a controlled remediation review while preserving uncertainty about external execution.',
+    steps: [
+      ['verify', 'Revalidate the missing posting', 'Recheck the source instruction, linked journals, legacy records, and current ledger before remediation.', ['payment', 'instruction', 'journal']],
+      ['cause', 'Review the processing trail', 'Inspect the cited events for the last verified processing state and any rollback or posting failure.', ['event', 'payment']],
+      ['impact', 'Assess customer and account impact', 'Confirm the affected parties, amount, currency, and whether any external execution evidence exists.', ['payment']],
+      ['prepare', 'Prepare the posting remediation review', 'Document the expected posting and the verified absence for authorised financial operations review.', ['journal']],
+      ['approve', 'Route for administrator review', 'Apply deterministic policy checks and require authorised approval before creating any ledger entry.', []],
+      ['audit', 'Record the decision and verification', 'Retain the evidence, decision, and post-decision verification in the audit history.', []],
+    ],
+    customerCommunication: {
+      recommended: true,
+      reason: 'A missing posting may affect payment completion. Review the customer-visible state before communicating or taking action.',
+      suggestedMessageType: 'Payment status update',
+    },
+    financialConsiderations: ['Confirm the expected amount and recheck all posting sources immediately before remediation.'],
+    risksAndSafeguards: ['Avoid duplicate posting by checking for late or externally recorded execution.', 'Require deterministic policy review, authorised approval, and post-action verification.', 'Do not create a ledger entry automatically.'],
+    approvalRecommendation: { required: true, suggestedRole: 'Admin', reason: 'Creating a missing financial posting requires authorised review and independent verification.' },
+    uncertainty: ['Absence in the checked sources does not by itself prove that no external execution occurred.'],
+  },
 };
 
 function matchingExample(report) {
   const action = report?.recommended_action_code;
   const example = Object.hasOwn(examples, action) ? examples[action] : null;
-  if (report?.prototype !== false || report.run_status !== 'COMPLETED' || report.exception_type !== 'DUPLICATE_TRANSACTION' || !example) return null;
-  if (report.diagnosis_classification !== example.diagnosis ||
+  if (report?.prototype !== false || report.run_status !== 'COMPLETED' || !example ||
+      report.exception_type !== example.exceptionType || report.diagnosis_classification !== example.diagnosis ||
       report.financial_execution_assessment?.classification !== example.classification ||
       report.financial_impact?.confirmedPostedJournalCount !== example.journalCount) return null;
   return example;
@@ -241,7 +319,7 @@ export async function generateResolutionPlan(caseId, investigationId, { report, 
   });
   return normalizeResolutionPlan({
     ...example, recommendedActionCode: report.recommended_action_code, steps,
-    summary: followUp ? `${example.summary} The proposal includes ${customerResponses.length} simulated customer ${customerResponses.length === 1 ? 'reply' : 'replies'} and adds a follow-up step.` : example.summary,
+    summary: followUp ? `${example.summary} The proposal includes ${customerResponses.length} customer email ${customerResponses.length === 1 ? 'reply' : 'replies'} and adds a follow-up step.` : example.summary,
     customerCommunication: followUp ? { recommended: true, reason: followUp, suggestedMessageType: 'Follow-up on customer response' } : example.customerCommunication,
     supportingEvidence: [...new Set(steps.flatMap(step => step.evidenceReferences))],
   });

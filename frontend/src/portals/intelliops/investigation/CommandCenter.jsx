@@ -65,6 +65,28 @@ export function MissingLedgerVerification({ report }) {
   return <section className="cc-financial" aria-labelledby="cc-missing-title"><div className="cc-financial-heading"><Wallet size={23}/><div><h2 id="cc-missing-title">Ledger record verification</h2><h3>{humanize(report.financial_execution_assessment.classification)}</h3></div></div><div className="inv-table-scroll"><table className="inv-table"><tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value == null ? 'Not established' : String(value)}</td></tr>)}</tbody></table></div><p>{report.financial_execution_assessment.explanation}</p><small className="inv-muted">Record absence is a bounded snapshot fact. Current and legacy ledgers must be checked again immediately before any remediation.</small></section>;
 }
 
+export function ReadyGenericInvestigation({ payment, accounts, fixture, exceptionType, onStart }) {
+  return <>
+    <section className="cc-ready" aria-labelledby="cc-detected"><div className="cc-section-heading"><div><p className="inv-kicker">Detected by the rule engine</p><h2 id="cc-detected">Operational exception requires investigation</h2></div><span className="cc-tag">{exceptionType}</span></div><p>AI will analyze current payment, processing-event and ledger evidence without relying on a predefined scenario answer.</p>
+      <div className="cc-request-pair"><article className="cc-request"><div className="cc-request-label"><span>Payment under review</span><span>{payment?.status || 'Unavailable'}</span></div><h3><SourceLink reference={payment?.id} fixture={fixture}/></h3><div className="cc-parties"><span>{person(accounts, payment?.senderId)}</span><ArrowRight size={15}/><span>{person(accounts, payment?.receiverId)}</span></div><strong className="cc-payment-amount">{amount(payment)}</strong></article></div>
+    </section>
+    <section className="cc-objectives" aria-labelledby="cc-objectives-title"><h2 id="cc-objectives-title">What AI will investigate</h2><div className="cc-objective-grid">{[
+      [GitBranch, 'Failure Mechanism', 'Which cited operational records support the likely cause?'],
+      [Wallet, 'Financial State', 'What do current payment and ledger records establish?'],
+      [ShieldCheck, 'Safe Review Path', 'Which guarded human-review action matches the detected exception?'],
+    ].map(([Icon, title, text], i) => <article key={title}><span className="cc-objective-icon"><Icon size={20}/></span><small>0{i + 1}</small><h3>{title}</h3><p>{text}</p></article>)}</div></section>
+    <div className="cc-start"><div><strong>Follow the current backend evidence.</strong><p>Model conclusions must cite saved source records and pass deterministic validation.</p></div><button className="inv-button inv-primary" onClick={onStart}><FileSearch size={17}/>Start AI Investigation<ArrowRight size={16}/></button></div>
+  </>;
+}
+
+export function GenericExceptionVerification({ report }) {
+  const f = report.financial_impact || {};
+  const rows = [['Exception classification', report.diagnosis_classification],
+    ['Financial classification', report.financial_execution_assessment?.classification],
+    ['Verified posted journals', f.confirmedPostedJournalCount], ['Recommended review action', report.recommended_action_code]];
+  return <section className="cc-financial" aria-labelledby="cc-generic-title"><div className="cc-financial-heading"><ShieldCheck size={23}/><div><h2 id="cc-generic-title">Operational and financial verification</h2><h3>{humanize(report.exception_type)}</h3></div></div><div className="inv-table-scroll"><table className="inv-table"><tbody>{rows.map(([label, value]) => <tr key={label}><th>{label}</th><td>{value == null ? 'Not established' : humanize(value)}</td></tr>)}</tbody></table></div><p>{report.financial_execution_assessment?.explanation}</p><small className="inv-muted">The AI explains cited evidence; backend guards retain action eligibility and approval authority.</small></section>;
+}
+
 export function DiagnosisHero({ report, onTrace }) {
   const [title, explanation] = conclusionPresentation(report);
   const v = resultSummary(report);

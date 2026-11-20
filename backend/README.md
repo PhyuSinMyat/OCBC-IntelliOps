@@ -63,3 +63,67 @@ python -m unittest discover -s tests -v
 Tests use isolated SQLite databases with foreign keys enabled. They never touch
 your configured PostgreSQL data. PostgreSQL deployment validation should be run
 against a dedicated development database before using the migration there.
+
+## Persistent resolution workflow
+
+Migration `20261119_09` adds immutable, append-only `resolution_plans`,
+`customer_communications`, and `policy_assessments` tables. The application never
+applies this migration at startup. Review it and run `alembic upgrade head` only
+against an explicitly approved target database.
+
+Authenticated endpoints:
+
+- `GET/POST /api/exceptions/{case_id}/resolution-plans`
+- `GET/POST /api/exceptions/{case_id}/communications`
+- `GET/POST /api/exceptions/{case_id}/policy-assessments`
+
+Plan generation is an explicit paid OpenAI request. The model receives a bounded,
+server-built projection of the accepted investigation, verified accounting facts,
+allowlisted evidence references, and recorded customer context. Strict structured
+output is required. The backend independently fixes the eligible action code,
+validates citations and unsafe completion claims, and keeps approval and financial
+authority out of the model. Set `INTELLIOPS_RESOLUTION_MODEL` to use a different
+model from `OPENAI_MODEL`; otherwise the investigation model is reused.
+
+Every version is immutable and captures the accepted investigation fingerprint
+plus the current persisted customer-context revision. New communications append
+records; they cannot be cleared from the UI. Policy assessment remains entirely
+deterministic: it evaluates six server controls and appends a historical result.
+These endpoints never post, reverse, refund, close, or otherwise mutate payment
+and ledger records. Tests use mocked provider transports and never make paid calls.
+
+## Outbound customer email
+
+Migration `20261119_10` removes the simulation-only communication constraint and
+adds a durable `email_deliveries` outbox. Apply it through the normal reviewed
+Alembic deployment; the application does not migrate the database at startup.
+
+Real email is ADMIN-only and remains disabled unless `INTELLIOPS_EMAIL_ENABLED`
+is true. Configure the SMTP and sender variables documented in `.env.example`.
+`STARTTLS` is the default transport security. `INTELLIOPS_EMAIL_ALLOWED_DOMAINS`
+can restrict recipients during development or staged rollout.
+
+The backend commits the communication and pending delivery before contacting the
+SMTP server. Known failures may be retried explicitly from the timeline. A
+delivery left in `SENDING`/`UNKNOWN` is not automatically retried because SMTP
+cannot guarantee idempotency after an interrupted connection. The stable
+Message-ID is retained for provider-side duplicate detection and audit review.
+
+## Inbound Gmail replies
+
+Migration `20261120_11` adds durable, idempotent receipt records for customer
+email replies. Review the migration and apply it through the normal Alembic
+deployment before enabling inbox synchronization; startup never runs migrations.
+
+Set `INTELLIOPS_INBOUND_EMAIL_ENABLED=true` and configure the IMAP variables in
+`.env.example`. For Gmail, enable IMAP access and use a Google App Password with
+`imap.gmail.com:993`; the IMAP username and password may be omitted when they are
+the same as the configured SMTP credentials.
+
+An ADMIN can explicitly check for replies from the communication timeline. The
+backend opens the mailbox read-only, scans a bounded date/message window, and
+imports only plain-text messages that reference an exact outbound Message-ID and
+come from that email's recipient address. Imported provider Message-IDs and
+mailbox UIDs are unique, so repeated checks do not duplicate a reply. Attachments,
+HTML-only messages, unrelated mail, and mismatched senders are ignored. The old
+manual customer-response simulator is not exposed by either the API or UI.

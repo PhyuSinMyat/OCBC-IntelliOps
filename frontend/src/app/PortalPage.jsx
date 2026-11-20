@@ -11,7 +11,7 @@ import AIInvestigation from '../portals/intelliops/AIInvestigation.jsx';
 import ResolutionWorkspace from '../portals/intelliops/resolution/ResolutionWorkspace.jsx';
 import ResolutionPlans from '../portals/intelliops/resolution/ResolutionPlans.jsx';
 import CustomerCommunication from '../portals/intelliops/resolution/CustomerCommunication.jsx';
-import PolicyAssessment from '../portals/intelliops/resolution/PolicyAssessment.jsx';
+import PolicyAssessment from '../portals/intelliops/resolution/PolicyAssessmentBackend.jsx';
 
 export default function PortalPage(props) {
   const { pathname, search } = useLocation();

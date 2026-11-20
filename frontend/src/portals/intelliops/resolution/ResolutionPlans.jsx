@@ -7,8 +7,8 @@ import { isInvestigable } from '../investigation/analysis.js';
 import { displayTime, humanize } from '../investigation/ReportSections.jsx';
 import { actionTitle, financialMetrics, isOpenCase, postingDiscrepancy, readResolutionCase, readResolutionQueue, resolutionPreview } from './resolutionData.js';
 import ResolutionPlanner, { useResolutionGeneration } from './ResolutionPlanner.jsx';
-import { resolutionCustomerResponses } from './communicationService.js';
-import { getSessionResolutionVersions, pendingResolutionResponses, resolutionPolicySearch } from './resolutionPlannerService.js';
+import { customerResponses, readCommunicationBundle } from './communicationBackendService.js';
+import { hasNewCommunicationContext, readResolutionVersions, resolutionPolicySearch } from './resolutionBackendService.js';
 import './resolution-plans.css';
 
 const exceptions = '/intelliops/exceptions';
@@ -196,25 +196,39 @@ function PlanDetail({ record, item, requestedPlan, requestedVersion, checkingEvi
   const evidenceStatus = freshness(stale, checkingEvidence);
   const caseId = report.case_id;
   const reportId = report.investigation_id;
-  const [versions, setVersions] = useState(() => getSessionResolutionVersions(caseId, reportId));
-  const [selectedVersion, setSelectedVersion] = useState(() =>
-    versions.find(version => version.planId === requestedPlan && String(version.version) === requestedVersion)?.version ?? null);
+  const [versions, setVersions] = useState([]);
+  const [communications, setCommunications] = useState([]);
+  const [workflowError, setWorkflowError] = useState('');
+  const [communicationRevision, setCommunicationRevision] = useState(0);
+  const [selectedVersion, setSelectedVersion] = useState(null);
+  useEffect(() => {
+    let current = true;
+    Promise.all([readResolutionVersions(caseId, reportId), readCommunicationBundle(caseId, reportId)])
+      .then(([plans, communicationBundle]) => {
+        if (!current) return;
+        setVersions(plans); setCommunications(communicationBundle.communications || []);
+        setCommunicationRevision(communicationBundle.contextRevision || 0);
+        setSelectedVersion(plans.find(version => version.planId === requestedPlan && String(version.version) === requestedVersion)?.version ?? null);
+      })
+      .catch(error => { if (current) setWorkflowError(error.message); });
+    return () => { current = false; };
+  }, [caseId, reportId, requestedPlan, requestedVersion]);
   const currentPlan = versions.at(-1);
   const plan = versions.find(item => item.version === selectedVersion) || currentPlan;
-  const responses = resolutionCustomerResponses(caseId, reportId);
-  const pending = Boolean(currentPlan && pendingResolutionResponses(currentPlan, responses).length);
+  const responses = customerResponses(communications);
+  const pending = hasNewCommunicationContext(currentPlan, communicationRevision);
   const reportLink = reportDestination(caseId, report);
   const assessment = report.financial_execution_assessment;
   const communicationTo = toContext(workspace + '/communication', caseId, reportId);
   const policyTo = workspace + '/policy' + resolutionPolicySearch(toContext('', caseId, reportId), plan);
-  const generation = useResolutionGeneration({ report, plan, current: currentPlan, pending,
+  const generation = useResolutionGeneration({ report, plan, current: currentPlan, pending, responses,
     onGenerated: nextVersions => { setVersions(nextVersions); setSelectedVersion(null); } });
   const generating = generation.stage !== null;
   const historical = Boolean(plan && plan !== currentPlan);
   const nextLabel = generating ? (plan ? 'Reassessing…' : 'Generating…') :
     !plan ? 'Generate AI Resolution Plan' : historical ? 'Return to Current Plan' :
       pending ? 'Reassess AI Resolution' : 'Continue to Policy Assessment';
-  const nextDescription = !plan ? 'Generate a simulated plan from the saved investigation.' :
+  const nextDescription = !plan ? 'Generate and persist a plan from the saved investigation.' :
     historical ? 'Return to the latest plan to continue this case.' :
       pending ? 'Update the plan with the latest customer response before policy handoff.' :
         'Open the Policy Assessment preview with the current plan and its customer snapshot.';
@@ -245,6 +259,7 @@ function PlanDetail({ record, item, requestedPlan, requestedVersion, checkingEvi
       <Link className="rp-inline" to={reportLink}>View Full Investigation<ArrowRight size={16} aria-hidden="true"/></Link>
     </section>
     <FinancialImpact {...{ report, evidenceStatus }}/>
+    {workflowError && <Notice error title="Resolution workflow unavailable">{workflowError}</Notice>}
     <ResolutionPlanner {...{ report, communicationTo, plan, versions, pending, responses, generation }} hasFinancials={financialMetrics(report).some(([, value]) => value !== null)}
       onSelect={setSelectedVersion}/>
     <section className="rp-panel rp-next" aria-labelledby="rp-next-title">
@@ -276,7 +291,7 @@ function SelectedCase({ caseId, reportId, localCase, queueItem, requestedPlan, r
     {loading ? <Loading>Loading case and investigation evidence…</Loading> :
       error && error.status !== 404 ? <Notice title="Resolution details unavailable" error action={<><button className="rp-button" type="button" onClick={retry}>Retry</button>{queue}</>}>{error.message}</Notice> :
       !data?.record ? <Notice title="Case unavailable" action={queue}>This case could not be found in the current dataset.</Notice> :
-      !isInvestigable(data.record) ? <Notice title="Exception type unavailable for resolution planning" action={queue}>Accepted investigations are available for duplicate transactions, amount mismatches, and missing ledger postings.</Notice> :
+      !isInvestigable(data.record) ? <Notice title="Exception type unavailable for resolution planning" action={queue}>This exception type does not yet have a backend evidence collector.</Notice> :
       <Notice title={reportId ? 'Saved investigation unavailable' : 'Accepted investigation required'} action={<>{investigate}{queue}</>}>
         {reportId ? 'The specified report could not be found for this case.' : 'Review an accepted investigation report before preparing a resolution.'}
       </Notice>}

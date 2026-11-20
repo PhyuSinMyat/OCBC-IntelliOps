@@ -11,6 +11,14 @@ AmountAction = Literal["REVIEW_SHORTFALL_ADJUSTMENT", "REVIEW_OVERPOSTING_CORREC
 MissingDiagnosis = Literal["CONFIRMED_MISSING_POSTING", "POSTING_RECORD_PRESENT", "INSUFFICIENT_EVIDENCE"]
 MissingFinancial = Literal["NO_POSTING_RECORD_CONFIRMED", "POSTING_RECORD_PRESENT", "EXECUTION_OUTCOME_UNKNOWN"]
 MissingAction = Literal["REVIEW_MISSING_POSTING_REMEDIATION", "REVIEW_FALSE_POSITIVE_CLOSURE", "ESCALATE_FOR_LEDGER_VERIFICATION"]
+GenericDiagnosis = Literal["CONFIRMED_PROCESSING_FAILURE", "CONFIRMED_UNMATCHED_TRANSACTION",
+    "CONFIRMED_INVALID_LEDGER_POSTING", "CONFIRMED_LEDGER_ACCOUNT_MISMATCH",
+    "CONFIRMED_LEDGER_CURRENCY_MISMATCH", "CONFIRMED_PROCESSING_TIMEOUT", "INSUFFICIENT_EVIDENCE"]
+GenericFinancial = Literal["UNDERPOSTING_CONFIRMED", "OVERPOSTING_CONFIRMED", "AMOUNT_MATCH_CONFIRMED", "EXECUTION_OUTCOME_UNKNOWN"]
+GenericAction = Literal["REVIEW_PROCESSING_FAILURE_RECOVERY", "REVIEW_UNMATCHED_TRANSACTION_RECONCILIATION",
+    "REVIEW_INVALID_LEDGER_REMEDIATION", "REVIEW_ACCOUNT_MISMATCH_REMEDIATION",
+    "REVIEW_CURRENCY_MISMATCH_REMEDIATION", "REVIEW_PROCESSING_TIMEOUT_RECOVERY",
+    "ESCALATE_FOR_EXCEPTION_VERIFICATION"]
 ACTION_MEANINGS = {
     'CLOSE_HELD_DUPLICATE': 'Propose human closure review of a confirmed duplicate request: shared instruction, one verified posting and a repeat held before execution. No automatic case closure.',
     'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION': 'Propose human review of confirmed shared-instruction duplicate execution with two verified postings. Two postings alone do not prove an unintended duplicate. No automatic financial correction.',
@@ -28,6 +36,13 @@ ACTION_TITLES = {
     'ESCALATE_FOR_AMOUNT_VERIFICATION': 'Escalate for amount verification',
     'REVIEW_MISSING_POSTING_REMEDIATION': 'Review missing-posting remediation',
     'ESCALATE_FOR_LEDGER_VERIFICATION': 'Escalate for ledger verification',
+    'REVIEW_PROCESSING_FAILURE_RECOVERY': 'Review payment-processing recovery',
+    'REVIEW_UNMATCHED_TRANSACTION_RECONCILIATION': 'Review unmatched transaction reconciliation',
+    'REVIEW_INVALID_LEDGER_REMEDIATION': 'Review invalid ledger posting remediation',
+    'REVIEW_ACCOUNT_MISMATCH_REMEDIATION': 'Review ledger account mismatch remediation',
+    'REVIEW_CURRENCY_MISMATCH_REMEDIATION': 'Review ledger currency mismatch remediation',
+    'REVIEW_PROCESSING_TIMEOUT_RECOVERY': 'Review processing-timeout recovery',
+    'ESCALATE_FOR_EXCEPTION_VERIFICATION': 'Escalate for exception verification',
 }
 
 
@@ -81,6 +96,22 @@ class MissingLedgerModelInvestigation(BaseModel):
     hypotheses: list[EvidenceClaim] = Field(max_length=8)
     uncertainty: list[str] = Field(min_length=1, max_length=12)
     recommended_action_code: MissingAction
+    recommendation_reason: str = Field(min_length=1, max_length=1600)
+
+
+class GenericExceptionModelInvestigation(BaseModel):
+    """Strict AI analysis for non-duplicate operational and ledger exceptions."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+    diagnosis_classification: GenericDiagnosis
+    root_cause_code: str = Field(min_length=1, max_length=80, pattern=r'^[A-Z][A-Z0-9_]*$')
+    root_cause_title: str = Field(min_length=1, max_length=240)
+    root_cause_explanation: str = Field(min_length=1, max_length=2000)
+    root_cause_evidence_refs: list[str] = Field(max_length=30)
+    financial_classification: GenericFinancial
+    facts: list[EvidenceClaim] = Field(min_length=1, max_length=12)
+    hypotheses: list[EvidenceClaim] = Field(max_length=8)
+    uncertainty: list[str] = Field(min_length=1, max_length=12)
+    recommended_action_code: GenericAction
     recommendation_reason: str = Field(min_length=1, max_length=1600)
 
 
@@ -141,3 +172,8 @@ class InvestigationHistoryOut(BaseModel):
     current_evidence_availability: Literal['AVAILABLE', 'UNAVAILABLE']
     limit: int
     offset: int
+
+
+class InvestigationImportRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    report: dict

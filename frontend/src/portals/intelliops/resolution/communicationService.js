@@ -6,10 +6,7 @@ export const communicationTypes = {
   RESOLUTION_STATUS_UPDATE: 'Resolution Status Update',
 };
 export const responseTypes = {
-  REQUEST_CORRECTION: 'Request Correction',
-  REQUEST_ASSISTANCE: 'Request Assistance',
-  NO_RESPONSE: 'No Response',
-  CUSTOM_RESPONSE: 'Custom Simulated Response',
+  CUSTOM_RESPONSE: 'Customer Email Reply',
 };
 
 const histories = new Map();
@@ -105,20 +102,6 @@ export function defaultMessage(type, context, evidenceCurrent) {
   };
 }
 
-export function responseText(type, context) {
-  const intended = context.metrics.find(([label]) => label === 'Intended transfer')?.[1];
-  const excess = context.metrics.find(([label]) => label === 'Apparent duplicate excess')?.[1];
-  switch (type) {
-    case 'REQUEST_CORRECTION':
-      return intended && excess && context.recommendation === 'recommended'
-        ? `I intended to transfer ${intended} only once. Please review how the additional ${excess} can be returned.`
-        : 'Please review the payment and explain what correction may be available.';
-    case 'REQUEST_ASSISTANCE': return 'I would like someone to explain what happened and what the next steps will be.';
-    case 'NO_RESPONSE': return 'No response has been received.';
-    default: return '';
-  }
-}
-
 function readHistory(caseId) {
   if (histories.has(caseId)) return histories.get(caseId);
   try {
@@ -170,7 +153,7 @@ export function validateDraft(subject, body, recipientEmail = '') {
 }
 
 export function validateMessage(context, subject, body, recipientEmail = '') {
-  if (!context.caseId || !context.customerName || !context.customerId) return 'A linked recipient is required to record a simulated send.';
+  if (!context.caseId || !context.customerName || !context.customerId) return 'A linked recipient is required to send email.';
   return validateDraft(subject, body, recipientEmail);
 }
 
@@ -204,21 +187,4 @@ export function recordSimulatedSend(context, { type, subject, body, recipientEma
   return append(context, { direction: 'OUTGOING', communicationType: type,
     subject: subject.trim(), body: body.trim(), recipientEmail: recipientEmail.trim() || null,
     status: 'SENT_SIMULATED', relatedCommunicationId: null }, recordedBy);
-}
-
-export function recordSimulatedResponse(context, type, custom, notificationId, recordedBy) {
-  const history = readCommunications(context);
-  const notification = history.find(item => item.id === notificationId &&
-    item.direction === 'OUTGOING' && item.communicationType === 'INCIDENT_NOTIFICATION');
-  if (!notification) throw new Error('Record an incident notification before adding a simulated response.');
-  if (!Object.hasOwn(responseTypes, type)) throw new Error('Select a supported response type.');
-  if (type === 'NO_RESPONSE' && history.some(item => item.direction === 'INCOMING' && item.relatedCommunicationId === notificationId)) {
-    throw new Error('A simulated customer response has already been recorded for this notification.');
-  }
-  const body = type === 'CUSTOM_RESPONSE' ? custom.trim() : responseText(type, context);
-  if (!body) throw new Error('Enter a simulated customer reply.');
-  const observation = type === 'NO_RESPONSE';
-  return append(context, { direction: observation ? 'SYSTEM' : 'INCOMING', communicationType: type,
-    subject: null, body, status: observation ? 'AWAITING_RESPONSE' : 'RESPONDED',
-    relatedCommunicationId: notification.id }, recordedBy);
 }

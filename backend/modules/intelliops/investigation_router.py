@@ -4,14 +4,15 @@ from uuid import UUID
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from modules.core_banking.router import get_db
-from shared.security import actor
+from shared.security import actor, administrator
 from .service import CaseError
 from .investigation_evidence import retrieve_evidence
 from .investigation_amount import retrieve_amount_evidence
 from .investigation_missing import retrieve_missing_evidence
+from .investigation_generic import GENERIC_TYPES, retrieve_generic_evidence
 from .investigation_llm import get_investigation_provider
 from .investigation_service import investigate
-from .investigation_schemas import InvestigationEvidenceOut, InvestigationHistoryOut
+from .investigation_schemas import InvestigationEvidenceOut, InvestigationHistoryOut, InvestigationImportRequest
 from .investigation_runs import once
 from . import investigation_storage as storage
 from .service import get_case
@@ -25,9 +26,16 @@ def collect(db, case_id):
     if db.bind.dialect.name == "postgresql":
         db.connection(execution_options={"isolation_level": "REPEATABLE READ", "postgresql_readonly": True})
     case = get_case(db, case_id)
-    evidence = (retrieve_amount_evidence(db, case_id) if case.exception_type in {'Amount Mismatch', 'AMOUNT_MISMATCH'} else
-                retrieve_missing_evidence(db, case_id) if case.exception_type in {'Missing Ledger Posting', 'MISSING_LEDGER_POSTING'} else
-                retrieve_evidence(db, case_id))
+    if case.exception_type in {'Amount Mismatch', 'AMOUNT_MISMATCH'}:
+        evidence = retrieve_amount_evidence(db, case_id)
+    elif case.exception_type in {'Missing Ledger Posting', 'MISSING_LEDGER_POSTING'}:
+        evidence = retrieve_missing_evidence(db, case_id)
+    elif case.exception_type in GENERIC_TYPES:
+        evidence = retrieve_generic_evidence(db, case_id)
+    elif case.exception_type in {'Duplicate Transaction', 'DUPLICATE_TRANSACTION'}:
+        evidence = retrieve_evidence(db, case_id)
+    else:
+        raise CaseError('AI investigation is not available for this exception type.', 409)
     evidence["retrieved_at"] = datetime.now(timezone.utc).isoformat()
     db.rollback()  # Release source snapshot/connection before the external LLM call.
     return evidence
@@ -88,14 +96,16 @@ def saved_history(db, case_id, limit, offset, investigation_id=None):
     get_case(db, case_id)  # Same shared ADMIN/ANALYST case access boundary as evidence GET.
     rows = storage.history(db, case_id, limit, offset, investigation_id)
     db.rollback()
-    current, availability = None, 'AVAILABLE'
+    current, current_evidence, availability = None, None, 'AVAILABLE'
     try:
-        current = storage.fingerprint(collect(db, case_id))
+        current_evidence = collect(db, case_id)
+        current = storage.fingerprint(current_evidence)
     except Exception:
         db.rollback()
         availability = 'UNAVAILABLE'
     for row in rows:
-        row['stale'] = row['evidence_fingerprint'] != current if current else None
+        row['stale'] = (not storage.materially_matches(row.get('report'), current_evidence)
+                        if current_evidence is not None and row.get('report') else None)
     return dict(persistence='BACKEND_DATABASE', investigations=rows, current_evidence_fingerprint=current,
                 current_evidence_availability=availability, limit=limit, offset=offset)
 
@@ -106,6 +116,28 @@ def list_investigations(case_id: str, limit: int = Query(20, ge=1, le=50), offse
     try:
         return saved_history(db, case_id, limit, offset)
     except CaseError as error:
+        raise HTTPException(error.status, str(error)) from error
+
+
+@router.post('/{case_id}/investigations/import')
+def import_investigation(case_id: str, request: InvestigationImportRequest, db: Session = Depends(get_db), role=Depends(administrator)):
+    """Revalidate and persist a browser-session backend report without a provider call."""
+    try:
+        report = request.report
+        if report.get('case_id') != case_id:
+            raise CaseError('Saved report does not belong to this case.', 422)
+        saved_evidence = storage.report_evidence(report)
+        if storage.material_fingerprint(saved_evidence) != storage.material_fingerprint(collect(db, case_id)):
+            raise CaseError('Current source evidence differs from this browser-session report. Run a new investigation.', 409)
+        status, saved = storage.import_accepted_report(db, report, role)
+        return JSONResponse(status_code=status, content=saved)
+    except (KeyError, TypeError, ValueError) as error:
+        db.rollback()
+        if isinstance(error, CaseError):
+            raise HTTPException(error.status, str(error)) from error
+        raise HTTPException(422, 'The browser-session report could not be validated for import.') from error
+    except CaseError as error:
+        db.rollback()
         raise HTTPException(error.status, str(error)) from error
 
 

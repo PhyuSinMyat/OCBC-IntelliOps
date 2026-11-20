@@ -9,7 +9,12 @@ export const stages = [
 export const isDuplicate = c => ['DUPLICATE_TRANSACTION', 'Duplicate Transaction'].includes(c?.exceptionType);
 export const isAmountMismatch = c => ['AMOUNT_MISMATCH', 'Amount Mismatch'].includes(c?.exceptionType);
 export const isMissingLedger = c => ['MISSING_LEDGER_POSTING', 'Missing Ledger Posting'].includes(c?.exceptionType);
-export const isInvestigable = c => isDuplicate(c) || isAmountMismatch(c) || isMissingLedger(c);
+export const genericExceptionTypes = new Set(['PAYMENT_PROCESSING_FAILURE', 'Payment Processing Failure',
+  'UNMATCHED_TRANSACTION', 'Unmatched Transaction', 'INVALID_LEDGER_POSTING', 'Invalid Ledger Posting',
+  'LEDGER_ACCOUNT_MISMATCH', 'Ledger Account Mismatch', 'LEDGER_CURRENCY_MISMATCH', 'Ledger Currency Mismatch',
+  'PROCESSING_TIMEOUT', 'Processing Timeout']);
+export const isGenericException = c => genericExceptionTypes.has(c?.exceptionType);
+export const isInvestigable = c => isDuplicate(c) || isAmountMismatch(c) || isMissingLedger(c) || isGenericException(c);
 export function relatedPayments(c, records) {
   const payments = records.payment_transactions || [];
   const duplicate = payments.find(p => p.id === c.transactionId);

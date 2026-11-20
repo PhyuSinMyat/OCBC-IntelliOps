@@ -64,6 +64,10 @@ class PersistenceTests(unittest.TestCase):
         self.assertEqual(self.client.get(path).json()['investigations'][0]['report'], report)
         self.assertEqual(before, self.financial_fingerprint())
         with Session(self.engine) as db, db.begin():
+            db.get(ExceptionCase, 4).status = 'IN_PROGRESS'
+        workflow_change = self.client.get(path).json()['investigations'][0]
+        self.assertFalse(workflow_change['stale'])
+        with Session(self.engine) as db, db.begin():
             db.get(ExceptionCase, 4).severity = 'LOW'  # Local fixture only, to prove stale history.
         stale = self.client.get(path).json()['investigations'][0]
         self.assertTrue(stale['stale']); self.assertEqual(stale['report'], report)

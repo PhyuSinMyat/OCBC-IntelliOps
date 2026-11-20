@@ -18,9 +18,9 @@ from main import app
 from modules.intelliops.models import AuditEvent, ExceptionCase
 from modules.intelliops.email_delivery import EmailSendError, get_mailer
 from modules.intelliops.inbound_email import InboundMessage, get_inbound_mailbox
-from modules.intelliops.resolution_models import CustomerCommunication, EmailDelivery, InboundEmailReceipt, PolicyAssessment, ResolutionPlan
+from modules.intelliops.resolution_models import ApprovalRequest, CustomerCommunication, EmailDelivery, InboundEmailReceipt, PolicyAssessment, ResolutionPlan
 from modules.intelliops.resolution_llm import ResolutionProvider, get_resolution_provider
-from modules.intelliops.resolution_workflow import _matching_rule
+from modules.intelliops.resolution_workflow import _communication_control, _matching_rule
 from shared.security import actor
 
 
@@ -96,6 +96,11 @@ class ResolutionWorkflowTests(unittest.TestCase):
         self.assertEqual(v1["generationSource"], "OPENAI_STRUCTURED")
 
         case, payment, account = self.customer_context()
+        class Mailer:
+            def validate_recipient(self, value): return value.strip().lower()
+            def message_id(self, token): return f'<{token}@example.test>'
+            def send(self, recipient, subject, body, message_id): pass
+        app.dependency_overrides[get_mailer] = Mailer
         message = self.client.post("/api/exceptions/CASE-000004/communications", json={
             "investigation_id": investigation_id,
             "customer_id": account["customerRef"],
@@ -104,6 +109,8 @@ class ResolutionWorkflowTests(unittest.TestCase):
             "communication_type": "INCIDENT_NOTIFICATION",
             "subject": "Payment review update",
             "body": "Our operations team is reviewing a processing issue. No further payment action is required from you.",
+            "recipient_email": "customer@example.com",
+            "delivery_mode": "EMAIL",
         })
         self.assertEqual(message.status_code, 200, message.text)
         self.assertEqual(message.json()["contextRevision"], 1)
@@ -139,6 +146,73 @@ class ResolutionWorkflowTests(unittest.TestCase):
             actions = set(db.scalars(select(AuditEvent.action)).all())
             self.assertTrue({"RESOLUTION_PLAN_CREATED", "RESOLUTION_PLAN_REASSESSED",
                              "CUSTOMER_NOTIFICATION_RECORDED", "POLICY_ASSESSMENT_COMPLETED"}.issubset(actions))
+
+    def test_approval_request_and_admin_decision_are_persistent_and_idempotent(self):
+        investigation_id = self.report["investigation_id"]
+        first = self.client.post("/api/exceptions/CASE-000004/resolution-plans", json={
+            "investigation_id": investigation_id, "expected_version": 0})
+        self.assertEqual(first.status_code, 200, first.text)
+        _, payment, account = self.customer_context()
+
+        class Mailer:
+            def validate_recipient(self, value): return value.strip().lower()
+            def message_id(self, token): return f'<{token}@example.test>'
+            def send(self, recipient, subject, body, message_id): pass
+
+        app.dependency_overrides[get_mailer] = Mailer
+        sent = self.client.post("/api/exceptions/CASE-000004/communications", json={
+            "investigation_id": investigation_id, "customer_id": account["customerRef"],
+            "related_transaction_id": payment["id"], "direction": "OUTGOING",
+            "communication_type": "INCIDENT_NOTIFICATION", "subject": "Payment review update",
+            "body": "Our operations team is reviewing this payment processing issue.",
+            "recipient_email": "customer@example.com", "delivery_mode": "EMAIL"})
+        self.assertEqual(sent.status_code, 200, sent.text)
+        plans = self.client.post("/api/exceptions/CASE-000004/resolution-plans", json={
+            "investigation_id": investigation_id, "expected_version": 1}).json()["plans"]
+        policy = self.client.post("/api/exceptions/CASE-000004/policy-assessments", json={
+            "plan_id": plans[-1]["planId"]})
+        self.assertEqual(policy.status_code, 200, policy.text)
+
+        submitted = self.client.post("/api/approval-requests", json={
+            "assessment_id": policy.json()["assessmentId"]})
+        self.assertEqual(submitted.status_code, 200, submitted.text)
+        self.assertEqual(submitted.json()["status"], "PENDING_APPROVAL")
+        self.assertEqual(submitted.json()["proposedActionLabel"], "Financial Correction Review")
+        self.assertEqual([item["label"] for item in submitted.json()["financialMetrics"]],
+                         ["Intended transfer", "Posted transfer movement", "Apparent duplicate excess"])
+        self.assertEqual(submitted.json()["customerContext"]["notificationCount"], 1)
+        self.assertEqual(submitted.json()["customerContext"]["responseCount"], 0)
+        replay = self.client.post("/api/approval-requests", json={
+            "assessment_id": policy.json()["assessmentId"]})
+        self.assertEqual(replay.status_code, 200, replay.text)
+        self.assertEqual(replay.json()["requestId"], submitted.json()["requestId"])
+
+        app.dependency_overrides[actor] = lambda: "ANALYST"
+        denied = self.client.post(f'/api/approval-requests/{submitted.json()["requestId"]}/decision', json={
+            "decision": "APPROVED", "reason": "Evidence and controls support proceeding."})
+        self.assertEqual(denied.status_code, 403, denied.text)
+        app.dependency_overrides[actor] = lambda: "ADMIN"
+        approved = self.client.post(f'/api/approval-requests/{submitted.json()["requestId"]}/decision', json={
+            "decision": "APPROVED", "reason": "Evidence and controls support proceeding."})
+        self.assertEqual(approved.status_code, 200, approved.text)
+        self.assertEqual(approved.json()["status"], "APPROVED")
+        repeated = self.client.post(f'/api/approval-requests/{submitted.json()["requestId"]}/decision', json={
+            "decision": "REJECTED", "reason": "This should not overwrite a final decision."})
+        self.assertEqual(repeated.status_code, 409, repeated.text)
+
+        self.client.close()
+        self.client = TestClient(app)
+        queue = self.client.get('/api/approval-requests')
+        self.assertEqual(queue.status_code, 200, queue.text)
+        self.assertEqual([item["requestId"] for item in queue.json()["requests"]], [submitted.json()["requestId"]])
+        persisted = self.client.get(f'/api/approval-requests/{submitted.json()["requestId"]}')
+        self.assertEqual(persisted.status_code, 200, persisted.text)
+        self.assertEqual(persisted.json()["status"], "APPROVED")
+        with Session(self.engine) as db:
+            self.assertEqual(len(db.scalars(select(ApprovalRequest)).all()), 1)
+            actions = set(db.scalars(select(AuditEvent.action)).all())
+            self.assertIn("APPROVAL_REQUEST_SUBMITTED", actions)
+            self.assertIn("APPROVAL_REQUEST_APPROVED", actions)
 
     def test_stale_version_and_unsafe_message_are_rejected(self):
         investigation_id = self.report["investigation_id"]
@@ -303,6 +377,15 @@ class InvestigationImportRecoveryTests(unittest.TestCase):
 
 
 class ResolutionEligibilityMatrixTests(unittest.TestCase):
+    def test_communication_control_distinguishes_delivery_from_not_required(self):
+        self.assertEqual(_communication_control(None, 0, 0)[0], 'BLOCKED')
+        self.assertEqual(_communication_control({'financial': False}, 0, 0)[0], 'NOT_REQUIRED')
+        self.assertEqual(_communication_control({'financial': True}, 0, 0)[0], 'REVIEW_REQUIRED')
+        status, reason = _communication_control({'financial': True}, 1, 0)
+        self.assertEqual(status, 'PASS')
+        self.assertIn('reply is not required', reason)
+        self.assertEqual(_communication_control({'financial': True}, 1, 1)[0], 'PASS')
+
     def test_every_investigation_review_path_has_a_deterministic_guard(self):
         rows = [
             ('DUPLICATE_TRANSACTION', 'CONFIRMED_DUPLICATE_REQUEST', 'DOUBLE_POSTING_CONFIRMED', 2, 'ESCALATE_DUPLICATE_FINANCIAL_EXECUTION'),

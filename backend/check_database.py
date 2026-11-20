@@ -8,7 +8,7 @@ import models
 
 
 def check():
-    report = {'connection': 'unverified', 'expected_revision': '20261120_11', 'schema_drift': {}}
+    report = {'connection': 'unverified', 'expected_revision': '20261120_12', 'schema_drift': {}}
     try:
         with engine.connect() as connection:
             transaction = connection.begin()

@@ -2,8 +2,9 @@
 import hashlib
 import json
 import os
+import re
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import String, Integer, ForeignKey, DateTime, JSON, CheckConstraint, Index, event, select
 from sqlalchemy.exc import IntegrityError, ProgrammingError, OperationalError
 from sqlalchemy.orm import Mapped, mapped_column
@@ -76,10 +77,21 @@ def _fingerprint(evidence, exclude_workflow_status):
     data.pop('retrieved_at', None)
     if exclude_workflow_status:
         data.get('snapshot', {}).get('caseRecord', {}).pop('status', None)
+    iso_timestamp = re.compile(
+        r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$"
+    )
     def canonical(value):
         if isinstance(value, dict): return {k: canonical(v) for k, v in value.items()}
         if isinstance(value, list):
             return sorted((canonical(v) for v in value), key=lambda v: json.dumps(v, sort_keys=True))
+        if isinstance(value, str) and iso_timestamp.fullmatch(value):
+            # PostgreSQL renders timestamptz values in the session timezone. A
+            # dump restored from a UTC Supabase session into a +08:00 local
+            # session must not look like changed financial/source evidence.
+            try:
+                return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc).isoformat()
+            except ValueError:
+                pass
         return value
     return hashlib.sha256(json.dumps(canonical(data), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 

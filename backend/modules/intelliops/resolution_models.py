@@ -116,6 +116,36 @@ class PolicyAssessment(Base):
     )
 
 
+class ApprovalRequest(Base):
+    """Durable human-approval handoff; decisions never execute financial work."""
+    __tablename__ = "approval_requests"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    case_id: Mapped[int] = mapped_column(ForeignKey("exceptions.id"), nullable=False, index=True)
+    assessment_id: Mapped[str] = mapped_column(ForeignKey("policy_assessments.id"), nullable=False, unique=True)
+    plan_id: Mapped[str] = mapped_column(ForeignKey("resolution_plans.id"), nullable=False, index=True)
+    investigation_id: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    plan_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    proposed_action: Mapped[str] = mapped_column(String(80), nullable=False)
+    customer_snapshot_reference: Mapped[str] = mapped_column(String(180), nullable=False)
+    required_approver_role: Mapped[str] = mapped_column(String(40), nullable=False, default="Administrator")
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING_APPROVAL")
+    requested_by: Mapped[str] = mapped_column(String(80), nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, nullable=False)
+    decided_by: Mapped[str | None] = mapped_column(String(80))
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_reason: Mapped[str | None] = mapped_column(Text)
+    __table_args__ = (
+        CheckConstraint("plan_version >= 1", name="ck_approval_plan_version"),
+        CheckConstraint("status IN ('PENDING_APPROVAL','APPROVED','REJECTED')", name="ck_approval_status"),
+        CheckConstraint("required_approver_role = 'Administrator'", name="ck_approval_required_role"),
+        CheckConstraint(
+            "(status = 'PENDING_APPROVAL' AND decided_by IS NULL AND decided_at IS NULL AND decision_reason IS NULL) OR "
+            "(status IN ('APPROVED','REJECTED') AND decided_by IS NOT NULL AND decided_at IS NOT NULL AND decision_reason IS NOT NULL)",
+            name="ck_approval_decision_state"),
+        Index("ix_approval_status_requested", "status", "requested_at"),
+    )
+
+
 def _immutable(mapper, connection, target):
     raise ValueError(f"{target.__class__.__name__} records are append-only.")
 

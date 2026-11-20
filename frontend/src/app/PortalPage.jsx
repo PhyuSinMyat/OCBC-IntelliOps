@@ -4,7 +4,7 @@ import Accounts from '../portals/core-banking/Accounts.jsx';
 import LedgerJournals from '../portals/core-banking/LedgerJournals.jsx';
 import Transactions from '../portals/payment-processing/Transactions.jsx';
 import IntelliOpsPage from '../portals/intelliops/IntelliOpsPage.jsx';
-import ApprovalCenter from '../portals/intelliops/ApprovalCenter.jsx';
+import ApprovalCenter from '../portals/intelliops/ApprovalCenterBackend.jsx';
 import AuditTrail from '../portals/intelliops/AuditTrail.jsx';
 import ExceptionRecords from '../portals/intelliops/ExceptionRecords.jsx';
 import AIInvestigation from '../portals/intelliops/AIInvestigation.jsx';

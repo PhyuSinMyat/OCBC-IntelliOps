@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import CaseStatus from '../../../shared/components/CaseStatus.jsx';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Building2, ChevronDown, ChevronRight, ChevronUp, Eye, FileText, LockKeyhole, MessagesSquare, ShieldCheck, UserRound } from 'lucide-react';
 import { contextSearch } from '../../../app/navigation.js';
@@ -55,6 +56,7 @@ function ImpactSummary({ context, record, plan, status, evidenceCurrent }) {
     <dl className="cm-context-strip">
       <div><dt>Case ID</dt><dd>{record.id}</dd></div>
       <div><dt>Exception type</dt><dd>{record.exceptionType}</dd></div>
+      <div><dt>Case status</dt><dd><CaseStatus value={record.status}/></dd></div>
       <div><dt>Communication status</dt><dd role="status">{status}</dd></div>
       <div><dt>Customer communication</dt><dd><span className={`cm-chip${context.recommendation === 'recommended' ? ' cm-chip-accent' : ''}`}>{recommendationText[context.recommendation]}</span></dd></div>
     </dl>

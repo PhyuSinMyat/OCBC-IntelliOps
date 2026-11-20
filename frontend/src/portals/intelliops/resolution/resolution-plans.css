@@ -37,10 +37,8 @@
 .rp-button svg, .rp-inline svg, .rp-badge svg { flex: none; }
 .rp-button:hover { background: #f0f5fa; border-color: #aebed0; }
 .rp-button:disabled { opacity: .55; cursor: default; }
-.rp-primary { background: #c50a2e; color: #fff; border-color: #c50a2e; }
-.rp-primary:hover { background: #a70827; border-color: #a70827; }
 .rp-inline { width: fit-content; color: #24547e; font-size: 13px; font-weight: 700; }
-.rp-workspace :where(a, button, select, summary):focus-visible { outline: 3px solid #478cce; outline-offset: 3px; }
+.rp-workspace :where(a, button, select, summary):focus-visible { outline: 3px solid var(--color-primary-focus); outline-offset: 3px; }
 .rp-panel, .rp-case-context {
   background: #fff;
   border: 1px solid var(--rp-border);
@@ -118,7 +116,7 @@
 .rp-history .rp-history-current { color: var(--rp-green); background: #eaf7f0; border-color: #c8e4db; }
 .rp-history-segments { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 3px; border: 1px solid #d2deeb; border-radius: 8px; background: #eaf0f7; }
 .rp-history-segments button { min-height: 34px; padding: 5px 10px; background: transparent; border-radius: 5px; color: #344e6b; font-size: 13px; font-weight: 650; }
-.rp-history-segments button[aria-pressed="true"] { background: #fff; color: #1b416b; box-shadow: 0 1px 3px #172a4420; }
+.rp-history-segments button[aria-pressed="true"] { background: var(--color-primary-light); color: var(--color-primary-active); box-shadow: inset 0 0 0 1px var(--color-primary-border); }
 .rp-history-segments button:disabled { opacity: .7; cursor: default; }
 .rp-version-toolbar { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 7px; font-size: 13px; font-weight: 700; }
 .rp-version-toolbar select { max-width: 100%; min-height: 36px; padding: 5px 8px; border: 1px solid #c7d6e5; border-radius: 6px; background: #fff; color: var(--rp-ink); font: inherit; }
@@ -149,7 +147,7 @@
 .rp-demo-progress h3 { margin-bottom: 8px; }
 .rp-demo-progress ol { display: grid; gap: 3px; padding: 0; margin: 0; list-style: none; }
 .rp-demo-progress li { display: flex; align-items: center; gap: 8px; min-height: 33px; padding: 5px 8px; color: var(--rp-muted); font-size: 14px; border-radius: 6px; }
-.rp-demo-progress li[aria-current] { color: #25466c; background: #eaf1fb; font-weight: 700; transition: background-color .15s ease; }
+.rp-demo-progress li[aria-current] { color: var(--color-primary-active); background: var(--color-primary-light); font-weight: 700; transition: background-color .15s ease; }
 .rp-demo-progress li[aria-current] svg { animation: rp-demo-spin .85s linear infinite; }
 @keyframes rp-demo-spin { to { transform: rotate(360deg); } }
 .rp-demo-summary { padding: clamp(15px, 2vw, 23px); border: 1px solid #cddcef; border-radius: 10px; background: #eef4fc; }
@@ -161,7 +159,7 @@
 .rp-demo-steps { list-style: none; margin: 0; padding: 0; }
 .rp-demo-steps > li { display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--rp-border); border-radius: 8px; }
 .rp-demo-steps h5 { margin: 0 0 3px; font-size: 14px; }
-.rp-demo-step-number { display: grid; place-items: center; flex: none; width: 27px; height: 27px; border-radius: 7px; background: #eaf1fb; color: #29496f; font-size: 13px; font-weight: 750; }
+.rp-demo-step-number { display: grid; place-items: center; flex: none; width: 27px; height: 27px; border-radius: 7px; background: var(--color-primary-light); color: var(--color-primary-active); font-size: 13px; font-weight: 750; }
 .rp-demo-review-grid { margin-top: 14px; }
 .rp-demo-review-card { min-width: 0; padding: 13px; border-radius: 8px; background: #f4f7fb; }
 .rp-demo-review-card h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 6px; font-size: 15px; }
@@ -189,7 +187,7 @@
 .rp-findings small { display: block; }
 .rp-record-links { display: grid; gap: 4px; }
 .rp-next { border-color: #e5d7dd; background: #fff; }
-.rp-next .rp-primary { min-height: 46px; padding-inline: 16px; box-shadow: 0 3px 8px #a708272e; }
+.rp-next .rp-primary { min-height: 46px; padding-inline: 16px; box-shadow: 0 3px 8px rgb(79 70 229 / .18); }
 .rp-next .rp-actions { justify-content: flex-end; }
 .rp-next > div:first-child { flex: 1 1 260px; }
 .rp-queue-list { list-style: none; margin: 0; padding: 0; }

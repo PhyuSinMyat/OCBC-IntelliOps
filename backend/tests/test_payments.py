@@ -196,14 +196,14 @@ class PaymentTests(unittest.TestCase):
             self.assertEqual(detail.json()["timeline"][0]["actionType"], "DETECTED")
             reviewed = self.client.post(f"/api/exceptions/{case_id}/notes", json={"note": "Payment source evidence verified."})
             self.assertEqual(reviewed.status_code, 200, reviewed.text)
-            self.assertEqual(reviewed.json()["status"], "IN_REVIEW")
+            self.assertEqual(reviewed.json()["status"], "IN_PROGRESS")
             payload = {"idempotency_key": "missing-ledger-fix-0001", "note": "Approved against source instruction."}
             repaired = self.client.post(f"/api/exceptions/{case_id}/remediate", json=payload)
             self.assertEqual(repaired.status_code, 200, repaired.text)
             self.assertEqual(repaired.json()["status"], "RESOLVED")
             self.assertTrue(repaired.json()["remediation"]["journalReference"].startswith("JRN-REM-"))
             self.assertEqual([a["actionType"] for a in repaired.json()["timeline"]],
-                             ["DETECTED", "NOTE_ADDED", "REMEDIATION_POSTED", "RESOLVED"])
+                             ["DETECTED", "NOTE_ADDED", "CASE_STATUS_CHANGED", "REMEDIATION_POSTED", "RESOLVED"])
             replay = self.client.post(f"/api/exceptions/{case_id}/remediate", json=payload)
             self.assertEqual(replay.status_code, 200, replay.text)
             self.assertEqual(replay.json()["remediation"]["journalReference"], repaired.json()["remediation"]["journalReference"])
@@ -221,7 +221,7 @@ class PaymentTests(unittest.TestCase):
         self.assertEqual(events[-1]["eventType"], "LEDGER_REMEDIATED")
         with Session(self.engine) as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(LedgerPostingRemediation)), 1)
-            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionCaseAction)), 5)
+            self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionCaseAction)), 6)
 
     def test_missing_ledger_remediation_stops_when_a_late_journal_exists(self):
         payment = self.post("MISSING_LEDGER")

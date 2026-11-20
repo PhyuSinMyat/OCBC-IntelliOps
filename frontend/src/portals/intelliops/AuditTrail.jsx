@@ -1,6 +1,9 @@
 ﻿import React, { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { FilterReset, FilterSearch, FilterSelect } from '../../shared/components/FilterControls.jsx';
+import { caseStatusLabel } from '../../shared/components/CaseStatus.jsx';
+import TablePagination, { useTablePagination } from '../../shared/components/TablePagination.jsx';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Activity, ArrowRight, Banknote, CheckCircle2, ChevronLeft, ChevronRight, ClipboardList, Clock3, Copy, FileSearch, Folder, ListFilter, MessagesSquare, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { Activity, ArrowRight, Banknote, CheckCircle2, ClipboardList, Clock3, Copy, FileSearch, Folder, ListFilter, MessagesSquare, ShieldCheck, TriangleAlert } from 'lucide-react';
 import RecordDrawer from '../../shared/components/RecordDrawer.jsx';
 import { backendConnected, refreshBackend, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { displayTime } from './investigation/ReportSections.jsx';
@@ -10,7 +13,7 @@ import './audit-trail.css';
 
 const base = '/intelliops';
 const dateInSingapore = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit' });
-const pageSize = 12;
+const emptyEventFilters = { search: '', category: '', actorSource: '', outcome: '', from: '', to: '' };
 const tabs = [['timeline', 'Case Timeline'], ['events', 'All Events']];
 const categoryIcons = { Exception: TriangleAlert, Investigation: FileSearch, Resolution: ClipboardList,
   Communication: MessagesSquare, Policy: ShieldCheck, Approval: CheckCircle2, Financial: Banknote };
@@ -83,11 +86,11 @@ function CaseSelector({ cases, caseId, onSelect, searchable }) {
   const options = cases.filter(([id, title]) => id === caseId || [id, title].some(value => value?.toLowerCase().includes(term)));
   return <div className="at-case-picker">
     {searchable && <label>Find a case<input type="search" placeholder="Case ID or exception type" value={search} onChange={event => setSearch(event.target.value)}/></label>}
-    <label>Case<select value={caseId || ''} onChange={event => onSelect(event.target.value)}>
+    <label>Case<FilterSelect active={Boolean(caseId)} value={caseId || ''} onChange={event => onSelect(event.target.value)}>
       <option value="">{searchable ? 'Select a case' : 'All cases'}</option>
       {caseId && !cases.some(([id]) => id === caseId) && <option value={caseId}>{caseId}</option>}
       {options.map(([id, title]) => <option key={id} value={id}>{title ? id + ' · ' + title : id}</option>)}
-    </select></label>
+    </FilterSelect></label>
     {searchable && term && !options.length && <p role="status">No cases match that search.</p>}
   </div>;
 }
@@ -104,7 +107,7 @@ function Timeline({ events, caseId, loading, unavailable, onOpen }) {
         <div className="at-event-heading"><h3>{event.title}</h3><EventTime event={event}/></div>
         <p>{event.summary}</p>
         <div className="at-event-meta"><SourceBadge source={event.source}/><span>{event.category}</span><span>{auditActor(event.actor)}</span>
-          {event.outcome && <span className="at-outcome">{auditLabel(event.outcome)}</span>}</div>
+          {event.outcome && <span className="at-outcome">{(event.type === 'CASE_STATUS_CHANGED' ? caseStatusLabel(event.outcome) : auditLabel(event.outcome))}</span>}</div>
       </div>
       <button type="button" className="rp-button at-details-action" aria-label={`View details for ${event.title}`} onClick={() => onOpen(event)}>Details<ArrowRight size={14} aria-hidden="true"/></button>
     </li>;
@@ -116,17 +119,17 @@ const fields = [
 ];
 
 function AuditTable({ events, cases, caseId, onSelect, onOpen, loading }) {
-  const [filters, setFilters] = useState({ search: '', category: '', actorSource: '', outcome: '', from: '', to: '' });
+  const [filters, setFilters] = useState(emptyEventFilters);
   const [newest, setNewest] = useState(true);
-  const [page, setPage] = useState(0);
-  function filter(name, value) { setFilters(previous => ({ ...previous, [name]: value })); setPage(0); }
+  function clearFilters() { setFilters(emptyEventFilters); pagination.resetPage(); onSelect(''); }
+  function filter(name, value) { setFilters(previous => ({ ...previous, [name]: value })); pagination.resetPage(); }
   const values = {
     category: [...new Set(events.map(event => event.category))].sort().map(value => [value, value]),
     actorSource: [
       ...[...new Set(events.map(event => event.source))].sort().map(value => ['source:' + value, value]),
       ...[...new Set(events.filter(event => event.actor).map(event => auditActor(event.actor)))].sort().map(value => ['actor:' + value, value]),
     ],
-    outcome: [...new Set(events.map(event => auditLabel(event.outcome)).filter(Boolean))].sort().map(value => [value, value]),
+    outcome: [...new Set(events.map(event => (event.type === 'CASE_STATUS_CHANGED' ? caseStatusLabel(event.outcome) : auditLabel(event.outcome))).filter(Boolean))].sort().map(value => [value, value]),
   };
   const term = filters.search.trim().toLowerCase();
   const invalidDates = Boolean(filters.from && filters.to && filters.from > filters.to);
@@ -135,50 +138,46 @@ function AuditTable({ events, cases, caseId, onSelect, onOpen, loading }) {
     const date = time === null ? '' : dateInSingapore.format(time);
     return (!caseId || event.caseId === caseId) && (!filters.category || event.category === filters.category) &&
       (!filters.actorSource || filters.actorSource === 'source:' + event.source || filters.actorSource === 'actor:' + auditActor(event.actor)) &&
-      (!filters.outcome || auditLabel(event.outcome) === filters.outcome) &&
+      (!filters.outcome || (event.type === 'CASE_STATUS_CHANGED' ? caseStatusLabel(event.outcome) : auditLabel(event.outcome)) === filters.outcome) &&
       (!filters.from || date && date >= filters.from) && (!filters.to || date && date <= filters.to) &&
       (!term || [event.title, event.id, event.caseId, event.actor, event.summary, ...Object.values(event.references)]
         .some(value => String(value ?? '').toLowerCase().includes(term)));
   }), newest);
-  const pages = Math.max(1, Math.ceil(visible.length / pageSize));
-  const current = Math.min(page, pages - 1);
+  const pagination = useTablePagination(visible.length, 20);
 
   return <>
     <div className="at-filters">
-      <label className="at-search">Search events<input type="search" placeholder="Event, case or reference" value={filters.search} onChange={event => filter('search', event.target.value)}/></label>
-      <CaseSelector {...{ cases, caseId }} onSelect={value => { setPage(0); onSelect(value); }}/>
-      {fields.map(([name, label]) => <label key={name}>{label}<select value={filters[name]} onChange={event => filter(name, event.target.value)}>
+      <FilterSearch aria-label="Search events" placeholder="Event, case or reference" value={filters.search} onChange={event => filter('search', event.target.value)}/>
+      <CaseSelector {...{ cases, caseId }} onSelect={value => { pagination.resetPage(); onSelect(value); }}/>
+      {fields.map(([name, label]) => <label key={name}>{label}<FilterSelect active={Boolean(filters[name])} value={filters[name]} onChange={event => filter(name, event.target.value)}>
         <option value="">All</option>{values[name].map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-      </select></label>)}
+      </FilterSelect></label>)}
       <label>From (SGT)<input type="date" value={filters.from} onChange={event => filter('from', event.target.value)}/></label>
       <label>To (SGT)<input type="date" value={filters.to} onChange={event => filter('to', event.target.value)}/></label>
+      {(caseId || Object.values(filters).some(Boolean)) && <FilterReset onClick={clearFilters}>Clear filters</FilterReset>}
     </div>
     <div className="at-table-toolbar"><p role="status">{visible.length} {visible.length === 1 ? 'event' : 'events'}</p>
-      <label>Sort<select value={newest ? 'newest' : 'oldest'} onChange={event => { setNewest(event.target.value === 'newest'); setPage(0); }}>
+      <label>Sort<FilterSelect active={!newest} value={newest ? 'newest' : 'oldest'} onChange={event => setNewest(event.target.value === 'newest')}>
         <option value="newest">Newest first</option><option value="oldest">Oldest first</option>
-      </select></label></div>
+      </FilterSelect></label></div>
     {invalidDates ? <p role="alert">Choose an end date on or after the start date.</p> :
       visible.length ? <>
         <table className="at-table">
           <thead><tr>{['Timestamp', 'Event', 'Case', 'Actor / Source', 'Category', 'Outcome', 'Details'].map(label => <th scope="col" key={label}>{label}</th>)}</tr></thead>
-          <tbody>{visible.slice(current * pageSize, (current + 1) * pageSize).map(event => <tr key={event.key}>
+          <tbody>{visible.slice(pagination.start, pagination.end).map(event => <tr key={event.key}>
             <td data-label="Timestamp"><EventTime event={event}/></td>
             <td data-label="Event"><strong>{event.title}</strong></td>
             <td data-label="Case">{event.caseId || 'Unavailable'}</td>
             <td data-label="Actor / Source"><span>{auditActor(event.actor)}</span><SourceBadge source={event.source}/></td>
             <td data-label="Category">{event.category}</td>
-            <td data-label="Outcome">{event.outcome ? auditLabel(event.outcome) : 'Unavailable'}</td>
+            <td data-label="Outcome">{event.outcome ? (event.type === 'CASE_STATUS_CHANGED' ? caseStatusLabel(event.outcome) : auditLabel(event.outcome)) : 'Unavailable'}</td>
             <td data-label="Details"><button className="rp-button at-details-action" type="button" aria-label={`View details for ${event.title}`} onClick={() => onOpen(event)}>View</button></td>
           </tr>)}</tbody>
         </table>
-        {pages > 1 && <nav className="at-paging" aria-label="Event pages">
-          <button className="rp-button" type="button" disabled={current === 0} onClick={() => setPage(current - 1)}><ChevronLeft size={15} aria-hidden="true"/>Previous</button>
-          <span>Page {current + 1} of {pages}</span>
-          <button className="rp-button" type="button" disabled={current + 1 === pages} onClick={() => setPage(current + 1)}>Next<ChevronRight size={15} aria-hidden="true"/></button>
-        </nav>}
-      </> : loading ? null : <Empty title={events.length ? 'No events match your filters' : 'No audit events available'}>
+      </> : loading ? null : <Empty title={events.length ? 'No records match your filters.' : 'No audit events available'}>
         {events.length ? 'Change the filters or search terms to see more records.' : 'Recorded events will appear as they become available.'}
       </Empty>}
+    {!loading && !invalidDates && <TablePagination pagination={pagination} label="Event pages" recordLabel="events"/>}
   </>;
 }
 
@@ -199,7 +198,7 @@ function EventDetails({ event, knownCase }) {
       <div><dt>Timestamp</dt><dd><EventTime event={event}/>{event.occurredAt && <small>{event.occurredAt}</small>}</dd></div>
       <div><dt>Actor</dt><dd>{auditActor(event.actor)}</dd></div>
       <div><dt>Role</dt><dd>{auditActor(event.actorRole)}</dd></div>
-      <div><dt>Outcome</dt><dd>{event.outcome ? auditLabel(event.outcome) : 'Unavailable'}</dd></div>
+      <div><dt>Outcome</dt><dd>{event.outcome ? (event.type === 'CASE_STATUS_CHANGED' ? caseStatusLabel(event.outcome) : auditLabel(event.outcome)) : 'Unavailable'}</dd></div>
     </dl>
     <h3>Recorded references</h3>
     <dl className="at-references">{[['Event ID', event.id], ...Object.entries(ref).filter(([, value]) => value != null && value !== '')

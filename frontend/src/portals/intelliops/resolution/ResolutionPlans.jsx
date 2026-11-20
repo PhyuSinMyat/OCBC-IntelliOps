@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import CaseStatus from '../../../shared/components/CaseStatus.jsx';
+import TablePagination, { useTablePagination } from '../../../shared/components/TablePagination.jsx';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Bot, ChevronRight, FileSearch, TriangleAlert } from 'lucide-react';
 import { contextSearch } from '../../../app/navigation.js';
@@ -79,6 +81,8 @@ function Queue({ records, rememberSelection }) {
   const active = records.filter(record => isOpenCase(record) && isInvestigable(record));
   const caseKey = JSON.stringify(backendConnected ? active.map(record => record.id).sort() : []);
   const { data, loading, error, retry } = useResolutionRead(caseKey, () => readResolutionQueue(JSON.parse(caseKey)));
+  const reports = [...(data?.reports || [])].sort((a, b) => String(b.report.completed_at || b.created_at).localeCompare(String(a.report.completed_at || a.created_at)));
+  const pagination = useTablePagination(reports.length);
   const browse = <Link className="rp-button" to={exceptions}>Browse Exception Center<ArrowRight size={16} aria-hidden="true"/></Link>;
   const retryButton = <button className="rp-button" onClick={retry} type="button">Retry</button>;
   if (!backendConnected) return <Notice title="Saved investigations unavailable" action={browse}>Connect to the banking backend to browse accepted reports, or open Resolution Plans from an investigation handoff in this session.</Notice>;
@@ -87,12 +91,11 @@ function Queue({ records, rememberSelection }) {
   if (!data.reports.length) return <Notice title="No eligible investigations" action={browse}>Open cases with an accepted investigation report appear here when they are ready for analyst review.</Notice>;
 
   const byCase = new Map(active.map(record => [record.id, record]));
-  const reports = [...data.reports].sort((a, b) => String(b.report.completed_at || b.created_at).localeCompare(String(a.report.completed_at || a.created_at)));
   return <>
     {data.failed > 0 && <Notice title="Queue may be incomplete" error action={retryButton}>Some investigation histories could not be retrieved.</Notice>}
     <section className="rp-panel rp-queue" aria-labelledby="rp-queue-title">
       <div className="rp-panel-heading"><h2 id="rp-queue-title">Eligible cases</h2><span className="rp-badge">{reports.length} {reports.length === 1 ? 'case' : 'cases'}</span></div>
-      <ul className="rp-queue-list">{reports.map(item => {
+      <ul className="rp-queue-list">{reports.slice(pagination.start, pagination.end).map(item => {
         const { report, stale } = item;
         const metrics = financialMetrics(report);
         const impact = (report.exception_type === 'MISSING_LEDGER_POSTING' || metrics.length < 3 ? metrics : [...metrics].reverse())
@@ -105,6 +108,7 @@ function Queue({ records, rememberSelection }) {
           <Link className="rp-button" onClick={() => rememberSelection(item)} to={toContext(workspace + '/plans', report.case_id, report.investigation_id)}>Open Resolution<ArrowRight size={16} aria-hidden="true"/></Link>
         </li>;
       })}</ul>
+      <TablePagination pagination={pagination} label="Eligible resolution case pages" recordLabel="cases"/>
     </section>
   </>;
 }
@@ -223,7 +227,7 @@ function PlanDetail({ record, item, requestedPlan, requestedVersion, checkingEvi
     <div className="rp-case-context">
       <div><span>Case ID</span><strong>{caseId}</strong></div>
       <div><span>Exception type</span><strong>{record?.exceptionType || humanize(report.exception_type || 'EXCEPTION_TYPE_UNAVAILABLE')}</strong></div>
-      <div><span>Proposal status</span><strong>{isOpenCase(record) ? 'Draft preview' : 'Case ' + humanize(record.status).toLowerCase()}</strong></div>
+      <div><span>Case status</span><CaseStatus value={record.status}/></div>
       <div><span>Evidence status</span><div role="status"><EvidenceStatus status={evidenceStatus}/></div></div>
     </div>
     {!isOpenCase(record) && <Notice error title="Case is no longer open">This report is available for reference.</Notice>}

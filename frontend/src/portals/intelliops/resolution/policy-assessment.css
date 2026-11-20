@@ -6,7 +6,7 @@
 .pa-progress ol { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--rp-muted); }
 .pa-progress li { display: flex; align-items: center; gap: 7px; }
 .pa-progress li + li::before { content: '›' / ''; color: var(--rp-muted); }
-.pa-progress [aria-current] { color: var(--rp-ink); font-weight: 750; }
+.pa-progress [aria-current] { color: var(--color-primary-active); font-weight: 750; }
 .pa-progress a:hover { text-decoration: underline; text-underline-offset: 3px; }
 .pa-panel { padding: clamp(15px, 2vw, 22px); border: 1px solid var(--rp-border); border-radius: 11px; background: #fff; box-shadow: 0 2px 8px #172a4408; min-width: 0; }
 .pa-overview dl { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 160px), 1fr)); gap: 9px 13px; margin: 12px 0 0; }

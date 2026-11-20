@@ -1,7 +1,11 @@
-﻿import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { FilterReset, FilterSearch, FilterSelect } from '../../shared/components/FilterControls.jsx';
+import TablePagination, { useTablePagination } from '../../shared/components/TablePagination.jsx';
 import { Building2, Search, ChevronRight, ShieldCheck } from 'lucide-react';
 
 import { Link, useSearchParams } from 'react-router-dom';
+import { TableBadge } from '../../shared/components/TablePresentation.jsx';
+import { tableMoney } from '../../shared/components/tableMoney.js';
 import { accounts, backendConnected, balanceFor, money, signedMoney, postingTime, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { defaultFilters, selectAccounts, typeLabel } from './accountFilters.js';
 import RecordDrawer from '../../shared/components/RecordDrawer';
@@ -24,8 +28,12 @@ export default function Accounts() {
   const balances = useMemo(() => Object.fromEntries(accounts.map(a => [a.id, balanceFor(records, a)])), [records]);
   const balance = selected ? balances[selected.id] : null;
   const rows = selectAccounts(accounts, balances, filters);
-  const change = (key, value) => setFilters(previous => ({ ...previous, [key]: value }));
-  const reset = () => setFilters({ ...defaultFilters });
+  const pagination = useTablePagination(rows.length);
+  const change = (key, value) => {
+    setFilters(previous => ({ ...previous, [key]: value }));
+    if (key !== 'sort') pagination.resetPage();
+  };
+  const reset = () => { setFilters({ ...defaultFilters }); pagination.resetPage(); };
   const options = {
     customerType: ['INDIVIDUAL', 'BUSINESS'], accountType: ['SAVINGS', 'CURRENT'],
     currency: [...new Set(accounts.map(a => a.currency))], status: [...new Set(accounts.map(a => a.status))],
@@ -41,16 +49,16 @@ export default function Accounts() {
     <section className="accounts-panel" aria-labelledby="register-title">
       <div className="account-register-heading"><div><h2 id="register-title">Account register</h2><p>All account records in the synthetic dataset.</p></div><span className="record-count">{rows.length} accounts</span></div>
       <div className="account-filters enhanced-filters">
-        <label className="account-search"><Search size={17}/><input aria-label="Search accounts" placeholder="Search account, customer or reference…" value={filters.query} onChange={e => change('query', e.target.value)}/></label>
-        {['customerType', 'accountType'].map(key => <label key={key}><span className="filter-label">{labels[key]}</span><select aria-label={'Filter by ' + labels[key].toLowerCase()} value={filters[key]} onChange={e => change(key, e.target.value)}><option value="">All</option>{options[key].map(value => <option value={value} key={value}>{typeLabel(value)}</option>)}</select></label>)}
-        <details className="advanced-filters"><summary>More filters{filters.currency || filters.status ? ' •' : ''}</summary><div className="advanced-filter-panel">{['currency', 'status'].map(key => <label key={key}><span className="filter-label">{labels[key]}</span><select aria-label={'Filter by ' + labels[key].toLowerCase()} value={filters[key]} onChange={e => change(key, e.target.value)}><option value="">All</option>{options[key].map(value => <option key={value}>{value}</option>)}</select></label>)}</div></details>
-        <label><span className="filter-label">Sort by</span><select aria-label="Sort accounts" value={filters.sort} onChange={e => change('sort', e.target.value)}>{[['reference', 'Account reference'], ['customer-asc', 'Customer A–Z'], ['customer-desc', 'Customer Z–A'], ['balance-asc', 'Balance low–high'], ['balance-desc', 'Balance high–low'], ['created-desc', 'Newest accounts'], ['created-asc', 'Oldest accounts']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>
-        <button className="account-link reset-filters" onClick={reset}>Reset filters</button>
+        <FilterSearch aria-label="Search accounts" placeholder="Search account, customer or reference…" value={filters.query} onChange={e => change('query', e.target.value)}/>
+        {['customerType', 'accountType'].map(key => <label key={key}><span className="filter-label">{labels[key]}</span><FilterSelect active={Boolean(filters[key])} aria-label={'Filter by ' + labels[key].toLowerCase()} value={filters[key]} onChange={e => change(key, e.target.value)}><option value="">All</option>{options[key].map(value => <option value={value} key={value}>{typeLabel(value)}</option>)}</FilterSelect></label>)}
+        <details className="advanced-filters" data-active={Boolean(filters.currency || filters.status) || undefined}><summary>More filters{filters.currency || filters.status ? ' •' : ''}</summary><div className="advanced-filter-panel">{['currency', 'status'].map(key => <label key={key}><span className="filter-label">{labels[key]}</span><FilterSelect active={Boolean(filters[key])} aria-label={'Filter by ' + labels[key].toLowerCase()} value={filters[key]} onChange={e => change(key, e.target.value)}><option value="">All</option>{options[key].map(value => <option key={value}>{value}</option>)}</FilterSelect></label>)}</div></details>
+        <label><span className="filter-label">Sort by</span><FilterSelect active={filters.sort !== defaultFilters.sort} aria-label="Sort accounts" value={filters.sort} onChange={e => change('sort', e.target.value)}>{[['reference', 'Account reference'], ['customer-asc', 'Customer A–Z'], ['customer-desc', 'Customer Z–A'], ['balance-asc', 'Balance low–high'], ['balance-desc', 'Balance high–low'], ['created-desc', 'Newest accounts'], ['created-asc', 'Oldest accounts']].map(([value, label]) => <option key={value} value={value}>{label}</option>)}</FilterSelect></label>
+        <FilterReset disabled={!activeFilters.length && filters.sort === defaultFilters.sort} onClick={reset}>Reset filters</FilterReset>
       </div>
       {activeFilters.length > 0 && <div className="active-filter-chips" aria-label="Active filters">{activeFilters.map(key => <button key={key} onClick={() => change(key, '')} aria-label={'Remove ' + (labels[key] || 'search') + ' filter'}>{labels[key] || 'Search'}: {typeLabel(filters[key])}<span aria-hidden="true"> ×</span></button>)}</div>}
-      <div className="account-table-scroll" tabIndex={0} role="region" aria-label="Scrollable account register"><table className="account-table"><caption className="sr-only">Fictional accounts and ledger-derived current balances</caption><thead><tr>{['Account reference', 'Customer', 'Customer Type', 'Account Type', 'Currency', 'Current balance', 'Status', 'Actions'].map((h, i) => <th key={i} scope="col" className={h === 'Current balance' ? 'balance-cell' : undefined}>{h || <span className="sr-only">Details</span>}</th>)}</tr></thead><tbody>{rows.map(a => <tr key={a.reference}><td><button className="account-link" onClick={e => { setSelected(a); }}>{a.reference}</button><small>Opening: {money(a.openingCents, a.currency)}</small></td><td><strong>{a.customer}</strong><small>{a.customerRef}</small></td><td><span className="customer-type-badge">{typeLabel(a.customerType)}</span></td><td>{typeLabel(a.accountType)}</td><td>{a.currency}</td><td className="balance-cell">{money(balances[a.id].current, a.currency)}<small className={balances[a.id].net < 0 ? 'movement-out' : 'movement-in'}>{balances[a.id].net ? 'Net change: ' + signedMoney(balances[a.id].net, a.currency) : 'No change'}</small></td><td><span className={`account-status ${a.status.toLowerCase()}`}><i/>{a.status}</span></td><td><button className="icon-button" aria-label={`View ${a.reference}`} onClick={e => { setSelected(a); }}><ChevronRight size={17}/></button></td></tr>)}</tbody></table></div>
-      {!rows.length && <div className="account-empty"><Search size={25}/><h3>No accounts found</h3><p>Try another search or clear your filters.</p><button className="account-link" onClick={reset}>Clear filters</button></div>}
-      <div className="account-table-footer" aria-live="polite">Showing {rows.length} of {accounts.length} accounts <span>All records are fictional</span></div>
+      <div className="account-table-scroll" tabIndex={0} role="region" aria-label="Scrollable account register"><table className="account-table"><caption className="sr-only">Fictional accounts and ledger-derived current balances</caption><thead><tr>{['Account reference', 'Customer', 'Customer Type', 'Account Type', 'Currency', 'Current balance', 'Status', 'Actions'].map((h, i) => <th key={i} scope="col" className={h === 'Current balance' ? 'balance-cell' : undefined}>{h || <span className="sr-only">Details</span>}</th>)}</tr></thead><tbody>{rows.slice(pagination.start, pagination.end).map(a => <tr key={a.reference}><td><button className="account-link" onClick={e => { setSelected(a); }}>{a.reference}</button><small>Opening: {tableMoney(a.openingCents, a.currency)}</small></td><td><strong>{a.customer}</strong><small>{a.customerRef}</small></td><td><span className="customer-type-badge">{typeLabel(a.customerType)}</span></td><td>{typeLabel(a.accountType)}</td><td>{a.currency}</td><td className="balance-cell">{tableMoney(balances[a.id].current, a.currency)}<small className={balances[a.id].net < 0 ? 'movement-out' : 'movement-in'}>{balances[a.id].net ? 'Net change: ' + signedMoney(balances[a.id].net, a.currency) : 'No change'}</small></td><td><TableBadge value={a.status}/></td><td><button className="icon-button" aria-label={`View ${a.reference}`} onClick={e => { setSelected(a); }}><ChevronRight size={17}/></button></td></tr>)}</tbody></table></div>
+      {!rows.length && <div className="account-empty"><Search size={25}/><h3>No accounts found</h3><p>{accounts.length ? 'No records match your filters.' : 'No accounts are available.'}</p><button className="account-link" onClick={reset}>Clear filters</button></div>}
+      <TablePagination pagination={pagination} label="Account pages" recordLabel="accounts"/>
     </section>
     <RecordDrawer open={!!selected} title={selected?.reference || 'Account details'} onClose={() => setSelected(null)}>
       {selected && <>

@@ -1,0 +1,153 @@
+.exception-workspace { display: grid; gap: 22px; min-width: 0; }
+.exception-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 20px;
+}
+.exception-kicker {
+  margin: 0 0 7px;
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+.exception-heading h1 {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: clamp(26px, 3vw, 30px);
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1.15;
+}
+.exception-description { margin: 8px 0 0; color: var(--color-text-secondary); font-size: 14px; line-height: 1.55; }
+.exception-heading .exception-detect {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  margin: 0;
+  padding: 8px 17px;
+  border-radius: 9px;
+  font-weight: 600;
+  transition: background-color .15s ease;
+}
+.exception-detect svg { flex: none; }
+.exception-auto-detection {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+.exception-auto-detection > span:last-child:not(:nth-child(2)) { margin-inline-start: 4px; }
+.exception-auto-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.exception-auto-detection[data-state="ENABLED"] .exception-auto-dot { background: var(--color-success); }
+.exception-auto-detection[data-state="DEGRADED"] .exception-auto-dot { background: var(--color-warning); }
+
+.exception-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+}
+.exception-metric {
+  position: relative;
+  padding: 15px 16px;
+  border: 1px solid var(--table-divider);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+.exception-metric dt { min-height: 18px; padding-inline-end: 36px; color: var(--table-header-text); font-size: 13px; font-weight: 650; }
+.exception-metric dd { display: grid; gap: 4px; margin: 5px 0 0; }
+.exception-metric strong { color: var(--color-text-primary); font-size: 26px; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.exception-metric small { color: var(--color-text-secondary); font-size: 11px; line-height: 1.45; }
+.exception-metric-icon {
+  position: absolute;
+  inset-block-start: 14px;
+  inset-inline-end: 14px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: var(--table-header-bg);
+  color: var(--table-header-text);
+}
+.exception-metric-priority { background: #fff7ed; color: #9a4b12; }
+.exception-metric-progress { background: var(--color-primary-light); color: var(--color-primary-active); }
+.exception-metric-pending { background: #fffbeb; color: #854d0e; }
+
+.exception-register-panel { min-width: 0; }
+.exception-workspace .exception-register-panel { border-radius: 12px; }
+.exception-register-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 17px 20px 2px;
+}
+.exception-register-heading h2 { margin: 0 0 4px; color: var(--color-text-primary); font-size: 17px; letter-spacing: -.015em; }
+.exception-register-heading p { margin: 0; color: var(--color-text-secondary); font-size: 13px; }
+.exception-register-heading .record-count { white-space: nowrap; }
+.exception-workspace .exception-register-panel > .enhanced-filters {
+  grid-template-columns: minmax(175px, 1.65fr) minmax(145px, 1.25fr) repeat(2, minmax(100px, 1fr)) minmax(120px, 1fr) auto;
+  padding-block: 15px 17px;
+}
+.exception-workspace .exception-register-panel > .enhanced-filters > .filter-search { grid-column: auto; }
+.exception-workspace .exception-register thead th { border-top: 1px solid var(--table-divider); }
+.exception-workspace .exception-register tbody tr { transition: background-color .15s ease-out; }
+.exception-workspace .exception-register tbody tr:not([data-selected]):not(:focus-within):hover { background: #f8fafc; }
+.exception-workspace .exception-register > tbody > tr > td { padding-block: 13px; }
+.exception-workspace .exception-register .exception-detected-at {
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.exception-feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  justify-self: start;
+  max-width: 100%;
+  padding: 9px 13px;
+  border: 1px solid #bbf7d0;
+  border-radius: 9px;
+  background: #f0fdf4;
+  color: #166534;
+  font-size: 13px;
+}
+.exception-feedback svg { flex: none; }
+.exception-feedback p { margin: 2px 0 0; }
+.exception-feedback.is-error { border-color: #fecaca; background: #fef2f2; color: #991b1b; }
+.exception-spinner { animation: exception-spin .9s linear infinite; }
+@keyframes exception-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 1220px) {
+  .exception-workspace .exception-register-panel > .enhanced-filters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .exception-workspace .exception-register-panel > .enhanced-filters > .filter-search { grid-column: span 2; }
+}
+@media (max-width: 1080px) {
+  .exception-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 650px) {
+  .exception-workspace { gap: 16px; }
+  .exception-heading { grid-template-columns: 1fr; }
+  .exception-heading .exception-detect { justify-self: start; }
+  .exception-workspace .exception-register-panel > .enhanced-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .exception-register-heading { padding-inline: 14px; }
+}
+@media (max-width: 375px) {
+  .exception-summary { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .exception-heading .exception-detect, .exception-workspace .exception-register tbody tr { transition: none; }
+  .exception-spinner { animation: none; }
+}

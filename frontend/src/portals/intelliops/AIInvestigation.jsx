@@ -1,8 +1,9 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
+import CaseStatus from '../../shared/components/CaseStatus.jsx';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, FileSearch, FlaskConical, History, LoaderCircle, RotateCcw, TriangleAlert } from 'lucide-react';
 import RecordDrawer from '../../shared/components/RecordDrawer.jsx';
-import { accounts, backendConnected, fetchExceptionCase, useBankingRecords } from '../../shared/data/bankingRecords.js';
+import { accounts, backendConnected, fetchExceptionCase, refreshBackend, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { isAmountMismatch, isDuplicate, isMissingLedger, relatedPayments, stages } from './investigation/analysis.js';
 import { developmentFixture, fixtureOptions } from './investigation/fixtures.js';
 import { getRuns, investigationKey, investigationRevision, loadPersistedInvestigations, sendToResolution, startInvestigation, subscribeInvestigations } from './investigation/service.js';
@@ -51,7 +52,10 @@ export default function AIInvestigation() {
   }, [caseId]);
   const fixtureName = params.get('fixture'), fixture = developmentFixture(fixtureName);
   const records = fixture?.records || sharedRecords;
-  const selected = fixture?.caseRecord || (loadedCase?.id === caseId ? loadedCase : null) || (sharedRecords.exception_cases || []).find(c => c.id === caseId);
+  const snapshotCase = (sharedRecords.exception_cases || []).find(c => c.id === caseId);
+  const detailCase = loadedCase?.id === caseId ? loadedCase : null;
+  const selected = fixture?.caseRecord || (Date.parse(snapshotCase?.updatedAt) > Date.parse(detailCase?.updatedAt)
+    ? snapshotCase : detailCase || snapshotCase);
   const invalidFixture = Boolean(fixtureName && (!fixture || caseId));
   const accountList = fixture?.accounts || accounts;
   const key = selected ? investigationKey(selected, fixture ? `fixture:${fixtureName}` : backendConnected ? `backend-llm:${import.meta.env.VITE_BANKING_API_URL}` : 'local') : '';
@@ -99,6 +103,14 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
     setFailNext(false);
     try { await startInvestigation({ key: keyValue, caseRecord: selected, records, accounts: accountList, fixture: fixture?.fixture, failEvidence, mode: backendConnected && !fixture ? 'backend' : 'prototype' }); }
     catch (e) { setError(e.message); }
+    finally {
+      if (backendConnected && !fixture) {
+        await Promise.allSettled([
+          refreshBackend({ fresh: true }),
+          fetchExceptionCase(caseId).then(setLoadedCase),
+        ]);
+      }
+    }
   }
   function handoff() {
     try {
@@ -114,7 +126,7 @@ function InvestigationWorkspace({ selected, records, accountList, fixture, keyVa
     <div className="page-heading inv-page-heading cc-page-heading"><div><p className="eyebrow">Investigation command center</p><h1>AI Investigation</h1></div><span className="cc-page-purpose">From a detected exception to an evidence-backed finding.</span></div>
     {!selected || invalidFixture ? <><Section title={location.search ? 'Investigation unavailable' : 'No Investigation Selected'} className="inv-empty"><FileSearch size={36}/><p>{location.search ? 'The selected case or development fixture is unavailable in the current dataset.' : 'Choose an exception from Exception Center to begin investigating its underlying cause.'}</p><Link className="inv-button inv-primary" to="/intelliops/exceptions">Browse Exceptions<ArrowRight size={15}/></Link></Section><DevelopmentExamples/></> : <>
       <div className="cc-prototype-note"><FlaskConical size={14}/><strong>{fixture ? `Development fixture · ${fixtureOptions[fixture.fixture]}` : backendConnected ? 'Backend AI investigation' : 'Prototype investigation adapter'}</strong><span>{backendConnected && !fixture ? 'Database evidence · Structured model analysis · Saved investigation history' : 'Deterministic simulation · No live LLM'}</span></div>
-      <header className="inv-case-header cc-case-header"><div className="inv-case-top"><div><div className="cc-case-reference"><span>{selected.id}</span><span className={`cc-severity ${selected.severity?.toUpperCase() === 'HIGH' ? 'cc-high' : ''}`}>{humanize(selected.severity)} severity</span></div><h2>{isDuplicate(selected) ? 'Potential Duplicate Transaction' : selected.exceptionType}</h2><div className="inv-related">{isDuplicate(selected) && <><SourceLink reference={original?.id} fixture={fixture?.fixture}/><span className="cc-reference-divider">/</span></>}<SourceLink reference={duplicate?.id || selected.transactionId} fixture={fixture?.fixture}/></div></div><div className="inv-header-actions">{caseDetails}<button className="inv-button cc-history-button" onClick={() => setTab('history')}><History size={15}/>View Investigation History</button></div></div><div className="cc-case-footer"><span>Case status <strong>{humanize(selected.status)}</strong></span><span>Investigation <strong>{latest ? humanize(latest.run_status) : 'Ready to investigate'}</strong></span><details><summary>Case metadata</summary><p>Assigned analyst: {selected.assignedTo || 'Unassigned'}</p><p>Detected: {displayTime(selected.createdAt)}</p></details></div></header>
+      <header className="inv-case-header cc-case-header"><div className="inv-case-top"><div><div className="cc-case-reference"><span>{selected.id}</span><span className={`cc-severity ${selected.severity?.toUpperCase() === 'HIGH' ? 'cc-high' : ''}`}>{humanize(selected.severity)} severity</span></div><h2>{isDuplicate(selected) ? 'Potential Duplicate Transaction' : selected.exceptionType}</h2><div className="inv-related">{isDuplicate(selected) && <><SourceLink reference={original?.id} fixture={fixture?.fixture}/><span className="cc-reference-divider">/</span></>}<SourceLink reference={duplicate?.id || selected.transactionId} fixture={fixture?.fixture}/></div></div><div className="inv-header-actions">{caseDetails}<button className="inv-button cc-history-button" onClick={() => setTab('history')}><History size={15}/>View Investigation History</button></div></div><div className="cc-case-footer"><span>Case status <CaseStatus value={selected.status}/></span><span>Investigation <strong>{latest ? humanize(latest.run_status) : 'Ready to investigate'}</strong></span><details><summary>Case metadata</summary><p>Assigned analyst: {selected.assignedTo || 'Unassigned'}</p><p>Detected: {displayTime(selected.createdAt)}</p></details></div></header>
       {!supported ? <Section title="Investigation not yet supported"><p>This workspace supports Duplicate Transaction, Amount Mismatch and Missing Ledger Posting cases.</p>{caseDetails}</Section> : <>
         {error && <p className="inv-error" role="alert">{error}</p>}
         {historical && <div className="inv-history-banner"><span>Read-only previous report · {viewed.investigation_id}</span><button className="inv-button" onClick={() => setViewedId(null)}>Return to latest report</button></div>}

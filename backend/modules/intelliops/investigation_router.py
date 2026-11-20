@@ -88,14 +88,14 @@ def saved_history(db, case_id, limit, offset, investigation_id=None):
     get_case(db, case_id)  # Same shared ADMIN/ANALYST case access boundary as evidence GET.
     rows = storage.history(db, case_id, limit, offset, investigation_id)
     db.rollback()
-    current, availability = None, 'AVAILABLE'
+    current, compatible, availability = None, set(), 'AVAILABLE'
     try:
-        current = storage.fingerprint(collect(db, case_id))
+        current, compatible = storage.compatible_fingerprints(collect(db, case_id))
     except Exception:
         db.rollback()
         availability = 'UNAVAILABLE'
     for row in rows:
-        row['stale'] = row['evidence_fingerprint'] != current if current else None
+        row['stale'] = row['evidence_fingerprint'] not in compatible if current else None
     return dict(persistence='BACKEND_DATABASE', investigations=rows, current_evidence_fingerprint=current,
                 current_evidence_availability=availability, limit=limit, offset=offset)
 

@@ -4,6 +4,7 @@ import { Bell, ChevronRight, CircleDot, Menu, ShieldCheck, X } from 'lucide-reac
 import { portals } from './portals.js';
 import { contextSearch, findCurrent, flattenRoutes, groupIsActive, isGroup } from './navigation.js';
 import PortalPage from './PortalPage.jsx';
+import ocbcLogo from './ocbc-logo.svg';
 import { backendConnected, refreshBackend, useBankingRecords } from '../shared/data/bankingRecords.js';
 
 export default function App() {
@@ -83,7 +84,7 @@ export default function App() {
     <header className="global-header" ref={headerRef}>
       <div className="brand-area">
         <button ref={menuButtonRef} className="icon-button mobile-menu" aria-controls="workspace-navigation" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={21}/> : <Menu size={21}/>}</button>
-        <NavLink className="brand" to="/intelliops/overview" onClick={() => setMenuOpen(false)}><span className="brand-mark" aria-hidden="true"><span/></span><span><strong>OCBC Operations Platform</strong><small>Demo Environment</small></span></NavLink>
+        <NavLink className="brand" to="/intelliops/overview" onClick={() => setMenuOpen(false)}><img className="brand-logo" src={ocbcLogo} alt="OCBC overview" width="126" height="36" /></NavLink>
       </div>
       <nav className="portal-switcher" aria-label="Portals">{portals.map(p => <NavLink key={p.id} to={lastPages.current[p.id] || p.home} className={`portal-tab ${portal.id === p.id ? 'selected' : ''}`} aria-current={portal.id === p.id ? 'page' : undefined} onClick={() => { setMenuOpen(false); setPopover(null); }}><p.icon size={15}/><span>{p.label}</span></NavLink>)}</nav>
       <div className="header-actions">

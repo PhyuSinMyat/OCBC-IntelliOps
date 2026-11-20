@@ -2,6 +2,7 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import unittest
+from unittest.mock import patch
 from decimal import Decimal
 from uuid import uuid4
 from pathlib import Path
@@ -32,6 +33,9 @@ def database():
 
 class AccountTests(unittest.TestCase):
     def setUp(self):
+        manual_detection = patch.dict(os.environ, {"INTELLIOPS_AUTOMATIC_DETECTION": "false"})
+        manual_detection.start()
+        self.addCleanup(manual_detection.stop)
         self.engine = database()
         Base.metadata.create_all(self.engine)
         with Session(self.engine) as db, db.begin():

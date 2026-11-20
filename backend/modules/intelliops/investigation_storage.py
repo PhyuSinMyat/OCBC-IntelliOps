@@ -10,7 +10,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from shared.database import Base
 from shared.timestamps import utc_now
 from .investigation_projection import model_evidence
-from .service import CaseError, parse_case_id
+from .service import CaseError, get_case, parse_case_id
+from .case_status import record_case_work
 
 
 class InvestigationRecord(Base):
@@ -57,8 +58,10 @@ def require_enabled():
         raise CaseError('Durable investigation history is not enabled. Deploy the approved SQL and enable INTELLIOPS_INVESTIGATION_PERSISTENCE before using saved history.', 503)
 
 
-def fingerprint(evidence):
+def fingerprint(evidence, case_status=None):
     data = model_evidence(evidence)
+    if case_status is not None:
+        data['snapshot']['caseRecord']['status'] = case_status
     data.pop('retrieved_at', None)
     def canonical(value):
         if isinstance(value, dict): return {k: canonical(v) for k, v in value.items()}
@@ -66,6 +69,16 @@ def fingerprint(evidence):
             return sorted((canonical(v) for v in value), key=lambda v: json.dumps(v, sort_keys=True))
         return value
     return hashlib.sha256(json.dumps(canonical(data), sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def compatible_fingerprints(evidence):
+    current = fingerprint(evidence)
+    status = evidence['snapshot']['caseRecord']['status']
+    # An administrative progress transition does not change the source evidence.
+    compatible = {current}
+    if status in {'IN_PROGRESS', 'IN_REVIEW'}:
+        compatible.update(fingerprint(evidence, prior) for prior in ('OPEN', 'IN_REVIEW', 'IN_PROGRESS') if prior != status)
+    return current, compatible
 
 
 def reserve(db, case_id, request_id, role, evidence):
@@ -79,7 +92,9 @@ def reserve(db, case_id, request_id, role, evidence):
             return record, False
         record = InvestigationRecord(request_id=str(request_id), case_id=case, created_by=role,
             status='RUNNING', evidence_fingerprint=fingerprint(evidence))
+        locked_case = get_case(db, case_id, lock=True)
         db.add(record)
+        record_case_work(db, locked_case, role, record, utc_now())
         db.commit()  # Reserve durably BEFORE the external request, across workers/restarts.
         return record, True
     except IntegrityError:

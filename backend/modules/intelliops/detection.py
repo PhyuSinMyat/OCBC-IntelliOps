@@ -13,6 +13,7 @@ from modules.core_banking.models import Account, LedgerJournal, LedgerEntry, Led
 from modules.core_banking.service import assess_journal
 from .models import ExceptionCase, ExceptionCaseAction, AuditEvent, DetectionObservation
 from .rules import load_rules
+from .severity import AGGREGATE_RULES, assess_severity, operational_failure, systemic_findings
 
 TERMINAL = {"RESOLVED", "CLOSED"}
 DETECTOR_LOCK = 731096062
@@ -48,11 +49,18 @@ def evaluate(tx, instruction, data, policies, now):
     """Pure rule evaluation. No source writes, invented events or inferred causes."""
     result = {}
     linked, legacy = data["journals_by_tx"][tx.id], data["legacy"][tx.id]
+    events = data["events"][tx.id]
+    movement = any(e.posted is True for j in linked for e in data["entries"][j.journal_id]) or bool(legacy)
     assessed = [(j, assess_journal(j, data["entries"][j.journal_id], data["accounts"], tx, instruction)) for j in linked]
     valid = [(j, a) for j, a in assessed if a["valid"] and not any(
         a[k] for k in ("currency_mismatch", "party_mismatch", "reference_mismatch"))]
     if tx.status == "FAILED":
-        result["PAYMENT_PROCESSING_FAILURE"] = {"status": tx.status, "failureCode": instruction.failure_code if instruction else None}
+        failure_code = instruction.failure_code if instruction else None
+        result["PAYMENT_PROCESSING_FAILURE"] = {
+            "status": tx.status, "failureCode": failure_code,
+            **operational_failure(events, has_records=bool(linked or legacy),
+                                  has_movement=movement, failure_code=failure_code),
+        }
     if tx.status == "COMPLETED":
         details = [dict(journalReference=j.journal_ref, status=j.status, currency=j.currency,
                         paymentReference=j.payment_reference, sourceTransactionId=j.source_transaction_id,
@@ -76,17 +84,25 @@ def evaluate(tx, instruction, data, policies, now):
             legacy_invalid = True
         if any(d["reasons"] for d in details) or legacy_invalid or linked and legacy:
             result["INVALID_LEDGER_POSTING"] = {**common, "classification": "INVALID_OR_INCOMPLETE_POSTING",
-                "legacyInvalid": legacy_invalid, "mixedRepresentations": bool(linked and legacy)}
+                "legacyInvalid": legacy_invalid, "mixedRepresentations": bool(linked and legacy),
+                "financialDiscrepancy": movement}
         if any(a["currency_mismatch"] for _, a in assessed) or any(r.currency != tx.currency for r in legacy):
             result["LEDGER_CURRENCY_MISMATCH"] = {**common, "expectedCurrency": tx.currency,
-                                                  "legacyCurrencies": sorted({r.currency for r in legacy})}
+                                                  "legacyCurrencies": sorted({r.currency for r in legacy}),
+                "financialDiscrepancy": any(a["currency_mismatch"] and any(e.posted is True for e in data["entries"][j.journal_id])
+                                            for j, a in assessed) or any(r.currency != tx.currency for r in legacy)}
         if any(a["party_mismatch"] for _, a in assessed):
-            result["LEDGER_ACCOUNT_MISMATCH"] = {**common, "classification": "WRONG_INSTRUCTION_ACCOUNTS"}
+            result["LEDGER_ACCOUNT_MISMATCH"] = {**common, "classification": "WRONG_INSTRUCTION_ACCOUNTS",
+                "financialDiscrepancy": any(a["party_mismatch"] and any(e.posted is True for e in data["entries"][j.journal_id])
+                                            for j, a in assessed)}
         unmatched = [j for j, a in assessed if a["valid"] and a["reference_mismatch"]]
         if unmatched:
             result["UNMATCHED_TRANSACTION"] = {**common, "journalReference": unmatched[0].journal_ref,
                 "actualReference": unmatched[0].payment_reference, "expectedReference": tx.reference,
-                "classification": "SOURCE_REFERENCE_CONFLICT"}
+                "classification": "SOURCE_REFERENCE_CONFLICT",
+                "financialDiscrepancy": len(assessed) == 1 and not legacy and any(
+                    j.source_transaction_id == tx.id and a["valid"] and not a["currency_mismatch"]
+                    and not a["party_mismatch"] and a["debit"] != tx.amount for j, a in assessed)}
         safe_modern = len(valid) == len(linked) and bool(valid) and not legacy
         safe_legacy = bool(legacy) and not linked and not legacy_invalid and all(r.currency == tx.currency for r in legacy)
         posted = sum((a["debit"] for _, a in valid), Decimal(0)) if safe_modern else sum((r.amount for r in legacy), Decimal(0))
@@ -101,7 +117,6 @@ def evaluate(tx, instruction, data, policies, now):
                 del result[code]
             else:
                 result[code]["cutoff"] = cutoff.isoformat()
-    events = data["events"][tx.id]
     original = None
     if instruction and instruction.original_payment_id:
         oi = data["instructions_by_id"].get(instruction.original_payment_id)
@@ -152,13 +167,10 @@ def evaluate(tx, instruction, data, policies, now):
     return result
 
 
-def detect(db, role, now=None):
-    now = aware(now or simulation_now())
-    if db.bind.dialect.name == "postgresql":
-        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": DETECTOR_LOCK})
-    policies = load_rules(db, now)
-    rows = db.execute(select(Transaction, PaymentInstruction).outerjoin(PaymentInstruction,
-        PaymentInstruction.transaction_id == Transaction.id).order_by(Transaction.id).with_for_update(of=Transaction)).all()
+def read_detection_sources(db, *, lock=False):
+    query = select(Transaction, PaymentInstruction).outerjoin(PaymentInstruction,
+        PaymentInstruction.transaction_id == Transaction.id).order_by(Transaction.id)
+    rows = db.execute(query.with_for_update(of=Transaction) if lock else query).all()
     data = {"transactions": {t.id: t for t, _ in rows}, "instructions": {t.id: i for t, i in rows},
             "instructions_by_id": {i.payment_id: i for _, i in rows if i},
             "references": defaultdict(list), "journals_by_tx": defaultdict(list),
@@ -176,14 +188,42 @@ def detect(db, role, now=None):
         data["legacy"][row.transaction_id].append(row)
     for row in db.scalars(select(ProcessingEvent).order_by(ProcessingEvent.created_at, ProcessingEvent.id)):
         data["events"][row.transaction_id].append(row)
+    return rows, data
+
+
+def evaluate_severity_sources(rows, data, policies, now):
+    evaluations = {tx.id: evaluate(tx, instruction, data, policies, now) for tx, instruction in rows}
+    cohort = []
+    for tx, instruction in rows:
+        account = data["accounts"].get(instruction.sender_account_id) if instruction else None
+        for code, evidence in evaluations[tx.id].items():
+            if code in AGGREGATE_RULES and policies[code][0].enabled and assess_severity(code, evidence)["severity"] == "HIGH":
+                cohort.append((code, tx.id, account.customer_id if account else None, aware(tx.created_at)))
+    return evaluations, systemic_findings(cohort, now)
+
+
+def detect(db, role, now=None, *, transaction_refs=None, source="MANUAL", only_rules=None):
+    now = aware(now or simulation_now())
+    if db.bind.dialect.name == "postgresql":
+        db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": DETECTOR_LOCK})
+    policies = load_rules(db, now)
+    rows, data = read_detection_sources(db, lock=True)
+    scope = None if transaction_refs is None else {
+        tx.id for tx, _ in rows if tx.reference in transaction_refs
+    }
     history = defaultdict(list)
     for case in db.scalars(select(ExceptionCase).order_by(ExceptionCase.id)):
         history[(case.transaction_id, case.exception_type)].append(case)
     observations = {(o.transaction_id, o.rule_id): o for o in db.scalars(select(DetectionObservation).where(DetectionObservation.related_transaction_id.is_(None)))}
     created = []
+    evaluations, systemic = evaluate_severity_sources(rows, data, policies, now)
     for tx, instruction in rows:
-        findings = evaluate(tx, instruction, data, policies, now)
+        if scope is not None and tx.id not in scope:
+            continue
+        findings = evaluations[tx.id]
         for code, (rule, config) in policies.items():
+            if only_rules is not None and code not in only_rules:
+                continue
             if code == 'DUPLICATE_TRANSACTION':
                 continue  # Pair observations are handled separately below.
             if not rule.enabled:
@@ -210,11 +250,12 @@ def detect(db, role, now=None):
                 continue
             details = {"transactionReference": tx.reference, "observedAt": now.isoformat(), **evidence,
                        "ruleCode": code, "ruleVersion": rule.version, "ruleConfiguration": config,
-                       "evidenceFingerprint": cursor.fingerprint}
+                       "evidenceFingerprint": cursor.fingerprint,
+                       "severityAssessment": assess_severity(code, evidence, systemic.get((code, tx.id)))}
             if prior:
                 details["recurrenceOf"] = f"CASE-{prior[-1].id:06d}"
             case = ExceptionCase(transaction_id=tx.id, rule_id=rule.id, exception_type=rule.exception_type,
-                                 severity=rule.severity, status="OPEN", detection_key=f"{tx.id}:{rule.exception_type}",
+                                 severity=details["severityAssessment"]["severity"], status="OPEN", detection_key=f"{tx.id}:{rule.exception_type}",
                                  evidence=details, created_at=now, updated_at=now)
             if not insert_case(db, case):
                 continue
@@ -222,8 +263,11 @@ def detect(db, role, now=None):
             db.add(ExceptionCaseAction(exception_id=case.id, action_type="DETECTED", actor=role, details=details, created_at=now))
             db.add(AuditEvent(action="EXCEPTION_DETECTED", actor=role, reference=f"CASE-{case.id:06d}", details=details, created_at=now))
             created.append(case.id)
-    created.extend(detect_pairs(db, rows, data, policies['DUPLICATE_TRANSACTION'], role, now))
-    db.add(AuditEvent(action="DETECTION_RUN", actor=role, reference="DETECTION", details={"createdCases": created}, created_at=now))
+    if only_rules is None or 'DUPLICATE_TRANSACTION' in only_rules:
+        created.extend(detect_pairs(db, rows, data, policies['DUPLICATE_TRANSACTION'], role, now, scope=scope))
+    if created or source == "MANUAL":
+        db.add(AuditEvent(action="DETECTION_RUN", actor=role, reference="DETECTION",
+                          details={"createdCases": created, "source": source}, created_at=now))
     db.flush()
     return created
 
@@ -290,7 +334,7 @@ def pair_finding(a, ai, b, bi, data, config):
         processingEventIds=[e.id for e in events], originalProcessingEventIds=[e.id for e in data['events'][a.id]])
 
 
-def detect_pairs(db, rows, data, policy, role, now):
+def detect_pairs(db, rows, data, policy, role, now, *, scope=None):
     rule, config = policy
     if not rule.enabled:
         return []
@@ -299,8 +343,11 @@ def detect_pairs(db, rows, data, policy, role, now):
     cursors = {(o.transaction_id, o.related_transaction_id): o for o in db.scalars(select(DetectionObservation).where(
         DetectionObservation.rule_id == rule.id, DetectionObservation.related_transaction_id.is_not(None)))}
     policy_hash, created = fingerprint({'version': rule.version, 'configuration': config}), []
+    scoped_indexes = [index for index, (tx, _) in enumerate(rows) if scope is not None and tx.id in scope]
     for index, (a, ai) in enumerate(rows):
-        for b, bi in rows[index + 1:]:
+        candidates = (rows[index + 1:] if scope is None or a.id in scope
+                      else (rows[j] for j in scoped_indexes if j > index))
+        for b, bi in candidates:
             evidence = pair_finding(a, ai, b, bi, data, config)
             prior = [c for c in cases if c.transaction_id == b.id and (c.related_transaction_id == a.id or
                 c.related_transaction_id is None and ((c.evidence or {}).get('originalReference') == a.reference or
@@ -319,11 +366,12 @@ def detect_pairs(db, rows, data, policy, role, now):
             if evidence is None or any(c.status not in TERMINAL for c in prior) or prior and not recovered:
                 continue
             details = {**evidence, 'observedAt': now.isoformat(), 'ruleCode': rule.code, 'ruleVersion': rule.version,
-                       'ruleConfiguration': config, 'evidenceFingerprint': cursor.fingerprint}
+                       'ruleConfiguration': config, 'evidenceFingerprint': cursor.fingerprint,
+                       'severityAssessment': assess_severity(rule.code, evidence)}
             if prior:
                 details['recurrenceOf'] = f'CASE-{prior[-1].id:06d}'
             case = ExceptionCase(transaction_id=b.id, related_transaction_id=a.id, rule_id=rule.id,
-                exception_type=rule.exception_type, severity=rule.severity, status='OPEN',
+                exception_type=rule.exception_type, severity=details["severityAssessment"]["severity"], status='OPEN',
                 detection_key=f'DUPLICATE_TRANSACTION:{a.id}:{b.id}', evidence=details, created_at=now, updated_at=now)
             if insert_case(db, case):
                 cases.append(case)

@@ -99,7 +99,7 @@ test('real shared duplicate opens directly, uses source links and never invents 
   });
   await page.goto(`/intelliops/exceptions?case=${caseId}&page=2&status=OPEN`);
   const before = await page.evaluate(() => localStorage.getItem('intelliops-banking-records-v1'));
-  await page.getByRole('link', { name: 'Open Investigation', exact: true }).click();
+  await page.getByRole('link', { name: 'Open AI Investigation', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Potential Duplicate Transaction' })).toBeVisible();
   await page.getByRole('button', { name: 'Start AI Investigation', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Underlying cause not established from available evidence.' })).toBeVisible();

@@ -1,4 +1,5 @@
 import { accounts, addTransfer, balanceFor, validJournal } from './bankingRecords.js';
+import { assessSimulationSeverity } from './simulationSeverity.js';
 
 export const scenarios = { NORMAL: 'Normal Payment', DUPLICATE: 'Duplicate Transaction', PROCESSING_FAILURE: 'Payment Processing Failure', MISSING_LEDGER: 'Missing Ledger Posting', AMOUNT_MISMATCH: 'Amount Mismatch', UNMATCHED: 'Unmatched Transaction' };
 export const processingStatuses = ['Pending', 'Processing', 'Completed', 'Failed', 'Rejected', 'Held'];
@@ -75,12 +76,28 @@ export function detectPayments(state, { now = new Date().toISOString(), role = '
     if (!original) firstReferences.set(business, p.id);
     const findings = [];
     // Duplicate pairs are evaluated separately below; do not collapse pairs by payment.
-    if (p.status === 'Failed') findings.push(['Payment Processing Failure', { failureCode: p.failureCode || null }]);
+    if (p.status === 'Failed') {
+      const events = (state.processing_events || []).filter(event => event.paymentId === p.id);
+      const financialMovementObserved = state.ledger_entries.some(entry => linked.some(j => j.id === entry.journalId) && entry.posted !== false);
+      const uncertain = [p.failureCode, ...events.flatMap(event => [event.eventType, event.errorCode])]
+        .some(code => /TIMEOUT|TIMED_OUT|UNKNOWN/i.test(code || ''));
+      const terminalFailure = events.some(event => ['PROCESSING_FAILED', 'CLEARING_REJECTED'].includes(event.eventType));
+      const executionRecorded = events.some(event => ['LEDGER_POSTED', 'PROCESSING_COMPLETED'].includes(event.eventType));
+      findings.push(['Payment Processing Failure', { failureCode: p.failureCode || null, financialMovementObserved,
+        failureContained: terminalFailure && !linked.length && !executionRecorded && !uncertain }]);
+    }
     const cutoff = p.reconciliationDueAt || new Date(Date.parse(p.createdAt) + 60000).toISOString();
     if (p.status === 'Completed' && Date.parse(now) >= Date.parse(cutoff)) {
       if (!linked.length) findings.push(['Missing Ledger Posting', { cutoff, journalReferences: [] }]);
       for (const j of linked) {
-        if (j.paymentId !== p.id) findings.push(['Unmatched Transaction', { journalReference: j.id, actualReference: j.paymentId, expectedReference: p.id, cutoff }]);
+        if (j.paymentId !== p.id) {
+          const entries = state.ledger_entries.filter(entry => entry.journalId === j.id);
+          const attributed = linked.length === 1 && j.sourcePaymentId === p.id && j.currency === p.currency &&
+            validJournal(state, j) && entries.every(entry => entry.accountId === (entry.side === 'Debit' ? p.senderId : p.receiverId));
+          const debit = entries.filter(entry => entry.side === 'Debit').reduce((sum, entry) => sum + entry.amountCents, 0);
+          findings.push(['Unmatched Transaction', { journalReference: j.id, actualReference: j.paymentId, expectedReference: p.id, cutoff,
+            financialDiscrepancy: attributed && debit !== p.amountCents }]);
+        }
         else if (validJournal(state, j)) {
           const debit = state.ledger_entries.filter(e => e.journalId === j.id && e.side === 'Debit').reduce((sum, e) => sum + e.amountCents, 0);
           if (debit !== p.amountCents) findings.push(['Amount Mismatch', { journalReference: j.id, expectedCents: p.amountCents, postedCents: debit }]);
@@ -91,7 +108,9 @@ export function detectPayments(state, { now = new Date().toISOString(), role = '
       if (cases.some(c => c.transactionId === p.id && c.exceptionType === exceptionType && !['RESOLVED', 'CLOSED'].includes(c.status))) continue;
       let number = cases.length + 1;
       while (cases.some(c => c.id === `CASE-${String(number).padStart(6, '0')}`)) number++;
-      cases.push({ id: `CASE-${String(number).padStart(6, '0')}`, transactionId: p.id, exceptionType, severity: exceptionType === 'Unmatched Transaction' ? 'MEDIUM' : 'HIGH', status: 'OPEN', createdAt: now, evidence: { transactionReference: p.id, observedAt: now, ...evidence } });
+      const severityAssessment = assessSimulationSeverity(exceptionType, evidence);
+      cases.push({ id: `CASE-${String(number).padStart(6, '0')}`, transactionId: p.id, exceptionType, severity: severityAssessment.severity,
+        status: 'OPEN', createdAt: now, evidence: { transactionReference: p.id, observedAt: now, ...evidence, severityAssessment } });
     }
   }
   const ordered = [...state.payment_transactions].sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt) || a.id.localeCompare(b.id));
@@ -112,15 +131,20 @@ export function detectPayments(state, { now = new Date().toISOString(), role = '
       .every(e => e.amountCents === p.amountCents && e.accountId === (e.side === 'Debit' ? p.senderId : p.receiverId)));
     const aj = journals(a), bj = journals(b);
     const consistent = aj.length === linked(a).length && bj.length === linked(b).length;
-    const financial = consistent && aj.length === 1 && bj.length === 1 ? 'TWO_POSTINGS_CONFIRMED'
-      : consistent && aj.length === 1 && !bj.length && b.status === 'Held' ? 'SINGLE_POSTING_CONFIRMED_DUPLICATE_HELD' : 'EXECUTION_OUTCOME_UNKNOWN';
+    const events = (state.processing_events || []).filter(event => event.paymentId === b.id);
+    const blocked = events.some(event => event.eventType === 'DUPLICATE_BLOCKED') &&
+      !events.some(event => ['PROCESSING_STARTED', 'LEDGER_POSTED', 'PROCESSING_COMPLETED'].includes(event.eventType));
+    const financial = consistent && aj.length === 1 && bj.length === 1 && aj[0].id !== bj[0].id ? 'TWO_POSTINGS_CONFIRMED'
+      : consistent && aj.length === 1 && !bj.length && ['Held', 'Pending'].includes(b.status) && blocked
+        ? 'SINGLE_POSTING_CONFIRMED_DUPLICATE_HELD' : 'EXECUTION_OUTCOME_UNKNOWN';
+    const severityAssessment = assessSimulationSeverity('Duplicate Transaction', { financialAssessment: financial });
     let number = cases.length + 1;
     while (cases.some(c => c.id === `CASE-${String(number).padStart(6, '0')}`)) number++;
     cases.push({ id: `CASE-${String(number).padStart(6, '0')}`, transactionId: b.id, relatedTransactionId: a.id,
-      exceptionType: 'Duplicate Transaction', detectionKey: pairKey, severity: 'HIGH', status: 'OPEN', createdAt: now,
+      exceptionType: 'Duplicate Transaction', detectionKey: pairKey, severity: severityAssessment.severity, status: 'OPEN', createdAt: now,
       evidence: { transactionReference: b.id, originalReference: a.id, observedAt: now, classification: 'SUSPECTED_DUPLICATE',
         rootCause: 'NOT_ESTABLISHED', attributesMatch: matching, timeDifferenceSeconds: elapsed, originalInstructionLinked: Boolean(direct),
-        financialAssessment: financial, originalJournalReferences: aj.map(j => j.id), duplicateJournalReferences: bj.map(j => j.id) } });
+        financialAssessment: financial, originalJournalReferences: aj.map(j => j.id), duplicateJournalReferences: bj.map(j => j.id), severityAssessment } });
   }
   const added = cases.slice((state.exception_cases || []).length);
   return { ...state, exception_cases: cases, simulationNow: now,

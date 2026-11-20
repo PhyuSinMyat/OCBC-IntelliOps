@@ -211,13 +211,16 @@ class PostgreSQLDetectionTests(unittest.TestCase):
         now = datetime(2026, 11, 3, 3, tzinfo=timezone.utc)
         with Session(self.engine) as db, db.begin():
             seed_demo(db)
-            create_payment(db, PaymentRequest(sender_account_ref="ACC-100003", receiver_account_ref="ACC-100001",
+            transaction, _ = create_payment(db, PaymentRequest(sender_account_ref="ACC-100003", receiver_account_ref="ACC-100001",
                            amount="100.00", idempotency_key="postgres-race-0001"), "ADMIN", "MISSING_LEDGER", now)
+            reference = transaction.reference
         gate = Barrier(4)
-        def scan(_):
+        def scan(index):
             with Session(self.engine) as db, db.begin():
                 gate.wait(timeout=10)
-                return detect(db, "ADMIN", now + timedelta(seconds=61))
+                return detect(db, "SYSTEM" if index % 2 else "ADMIN", now + timedelta(seconds=61),
+                              transaction_refs={reference} if index % 2 else None,
+                              source="POST_COMMIT" if index % 2 else "MANUAL")
         with ThreadPoolExecutor(max_workers=4) as pool:
             outcomes = list(pool.map(scan, range(4)))
         self.assertEqual(sum(map(len, outcomes)), 1)

@@ -84,7 +84,7 @@ def remediate_exception(db, case_id, request, role, now=None):
     case = get_case(db, case_id, lock=True)
     if replayed(db, case, request.idempotency_key):
         return case
-    if case.status not in ("OPEN", "IN_REVIEW"):
+    if case.status not in ("OPEN", "IN_REVIEW", "IN_PROGRESS"):
         raise CaseError("Only an open or in-review case can be resolved.", 409)
     tx, instruction, sender, receiver = context(db, case)
 

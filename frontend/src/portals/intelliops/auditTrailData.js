@@ -12,6 +12,8 @@ export const auditActor = actor => actor === 'ADMIN' ? 'Administrator' : actor =
 const operations = {
   DETECTED: ['Exception detected', 'Exception', 'An exception was recorded by the detection workflow.'],
   EXCEPTION_DETECTED: ['Exception detected', 'Exception', 'An exception was recorded by the detection workflow.'],
+  CASE_STATUS_CHANGED: ['Case status changed', 'Exception', 'The recorded case status was updated from durable workflow evidence.'],
+  SEVERITY_RECALCULATED: ['Severity recalculated', 'Exception', 'The current severity was updated using observable evidence.'],
   DETECTION_RUN: ['Detection run recorded', 'Exception', 'The detection workflow recorded a run.'],
   NOTE_ADDED: ['Review note added', 'Exception', 'A review note was recorded for the exception.'],
   EXCEPTION_NOTE_ADDED: ['Review note added', 'Exception', 'A review note was recorded for the exception.'],
@@ -49,7 +51,7 @@ function operationEvent(namespace, item, caseId, source) {
   const details = item.details || {};
   return displayEvent(namespace + ':' + item.id, item.id, {
     caseId, occurredAt: item.createdAt, actor: item.actor, actorRole: roleOf(item.actor),
-    type, title, category, summary, source, outcome: item.status || null,
+    type, title, category, summary, source, outcome: type === 'CASE_STATUS_CHANGED' ? details.status : item.status || null,
     references: { sourceReference: item.reference, transaction: details.transactionReference, journal: details.journalReference },
     metadata: item,
   });

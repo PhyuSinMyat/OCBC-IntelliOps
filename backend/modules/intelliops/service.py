@@ -61,10 +61,13 @@ def add_note(db, case_id, note, role, now=None):
     case = get_case(db, case_id, lock=True)
     if case.status in ("RESOLVED", "CLOSED"):
         raise CaseError("Notes cannot be added after a case is resolved or closed.", 409)
-    case.status = "IN_REVIEW"
+    from .case_status import record_case_work
     case.updated_at = now
-    db.add(ExceptionCaseAction(exception_id=case.id, action_type="NOTE_ADDED", actor=role,
-                               details={"note": note.strip()}, created_at=now))
+    action = ExceptionCaseAction(exception_id=case.id, action_type="NOTE_ADDED", actor=role,
+                                 details={"note": note.strip()}, created_at=now)
+    db.add(action)
+    db.flush()
+    record_case_work(db, case, role, action, now)
     db.add(AuditEvent(action="EXCEPTION_NOTE_ADDED", actor=role, reference=f"CASE-{case.id:06d}",
                       details={"note": note.strip()}, created_at=now))
     db.flush()
@@ -86,7 +89,7 @@ def remediate_missing_posting(db, case_id, request, role, now=None):
         return case
     if case.exception_type != "Missing Ledger Posting":
         raise CaseError("Only a Missing Ledger Posting case can use this remediation.", 409)
-    if case.status not in ("OPEN", "IN_REVIEW"):
+    if case.status not in ("OPEN", "IN_REVIEW", "IN_PROGRESS"):
         raise CaseError("Only an open or in-review case can be remediated.", 409)
     tx = db.get(Transaction, case.transaction_id)
     instruction = db.scalar(select(PaymentInstruction).where(PaymentInstruction.transaction_id == tx.id))

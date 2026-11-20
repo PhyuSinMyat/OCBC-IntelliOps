@@ -1,4 +1,5 @@
 import React, { useRef, useState } from 'react';
+import { caseStatusLabel } from '../../shared/components/CaseStatus.jsx';
 import { Link } from 'react-router-dom';
 import RecordDrawer from '../../shared/components/RecordDrawer.jsx';
 import { accounts, money, postingTime, useBankingRecords } from '../../shared/data/bankingRecords.js';
@@ -49,7 +50,7 @@ export default function TransactionDetailsDrawer({ id, onClose }) {
           const total = side => records.ledger_entries.filter(e => e.journalId === j.id && e.side === side).reduce((sum, e) => sum + e.amountCents, 0);
           return <article className="posted-entry" key={j.id}>{facts([['Journal reference', j.id], ['Status', j.status], ['Posting timestamp', timestamp(j.postedAt)], ['Payment reference', j.paymentId], ['Debit total', money(total('Debit'), j.currency)], ['Credit total', money(total('Credit'), j.currency)]])}<Link className="account-link" to={'/core-banking/journals?journal=' + encodeURIComponent(j.id)}>Open Ledger Journal</Link></article>;
         }) : <p className="account-empty">No corresponding ledger journal found.</p>}
-        <h3 className="drawer-section-title">Linked IntelliOps Exceptions</h3>{cases.length ? cases.map(c => <article className="posted-entry" key={c.id}>{facts([['Case reference', c.id], ['Exception type', c.exceptionType], ['Severity', c.severity], ['Lifecycle status', c.status]])}<Link className="account-link" to={'/intelliops/exceptions?case=' + encodeURIComponent(c.id)}>Open IntelliOps Case</Link></article>) : <p className="account-empty">No linked exceptions.</p>}
+        <h3 className="drawer-section-title">Linked IntelliOps Exceptions</h3>{cases.length ? cases.map(c => <article className="posted-entry" key={c.id}>{facts([['Case reference', c.id], ['Exception type', c.exceptionType], ['Severity', c.severity], ['Status', caseStatusLabel(c.status)]])}<Link className="account-link" to={'/intelliops/exceptions?case=' + encodeURIComponent(c.id)}>Open IntelliOps Case</Link></article>) : <p className="account-empty">No linked exceptions.</p>}
       </>}
     </div>
   </>}</RecordDrawer>;

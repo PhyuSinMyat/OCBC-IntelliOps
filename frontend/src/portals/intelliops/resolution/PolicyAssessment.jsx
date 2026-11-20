@@ -1,4 +1,6 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
+import CaseStatus from '../../../shared/components/CaseStatus.jsx';
+import TablePagination, { useTablePagination } from '../../../shared/components/TablePagination.jsx';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, CheckCircle2, ChevronRight, CircleHelp, Copy, LoaderCircle, LockKeyhole, Shield, ShieldCheck, TriangleAlert, UserRound, XCircle } from 'lucide-react';
 import { contextSearch } from '../../../app/navigation.js';
@@ -56,6 +58,7 @@ function Overview({ context, record, investigationAccepted }) {
     <dl>
       <div><dt>Resolution plan</dt><dd>V{plan.version} · {current?.version === plan.version ? 'Current' : 'Superseded'}</dd></div>
       <div><dt>Proposed action</dt><dd>{policyActionLabel(plan)}</dd></div>
+      <div><dt>Case status</dt><dd><CaseStatus value={record?.status}/></dd></div>
       <div><dt>AI investigation</dt><dd>{investigationAccepted ? 'Accepted' : 'Acceptance not confirmed'}</dd></div>
       <div><dt>Customer context</dt><dd>{plan.customerSnapshot.responses.length} {plan.customerSnapshot.responses.length === 1 ? 'response' : 'responses'} included</dd></div>
     </dl>
@@ -87,7 +90,7 @@ function Decision({ status, assessment, reason, running, outdated, onRun, readin
         <p className="pa-decision-next"><strong>Next:</strong> Submit Plan V{planVersion} for Administrator review.</p>}
       {!running && status === 'APPROVAL_REQUIRED' && readiness.submission &&
         <p className="pa-decision-next">Simulated assessment · Pending Administrator review</p>}
-      {status === 'NOT_EVALUATED' && !running && <button className="rp-button pa-decision-action" type="button" onClick={onRun}>Run Policy Assessment</button>}
+      {status === 'NOT_EVALUATED' && !running && <button className="rp-button rp-primary pa-decision-action" type="button" onClick={onRun}>Run Policy Assessment</button>}
     </div>
   </section>;
 }
@@ -139,10 +142,12 @@ function Authorization() {
 }
 
 function AssessmentHistory({ activity, currentAssessment, context }) {
+  const pagination = useTablePagination(activity.length);
   if (!activity.length) return null;
+  const sorted = [...activity].reverse().sort((a, b) => Date.parse(b.evaluatedAt) - Date.parse(a.evaluatedAt));
   return <details className="pa-panel pa-history">
     <summary>Assessment history · {activity.length} {activity.length === 1 ? 'record' : 'records'}</summary>
-    <ul>{[...activity].reverse().sort((a, b) => Date.parse(b.evaluatedAt) - Date.parse(a.evaluatedAt)).map(item => <li key={item.assessmentId}><details>
+    <ul>{sorted.slice(pagination.start, pagination.end).map(item => <li key={item.assessmentId}><details>
       <summary>
         <span className="pa-history-row">
           <span title={item.assessmentId}>Ref {item.assessmentId.slice(0, 8)}</span>
@@ -160,6 +165,7 @@ function AssessmentHistory({ activity, currentAssessment, context }) {
         </div>)}</dl>
       </div>
     </details></li>)}</ul>
+    {activity.length > 10 && <TablePagination pagination={pagination} label="Assessment history pages" recordLabel="records"/>}
   </details>;
 }
 
@@ -279,10 +285,10 @@ function PolicyWorkspace() {
         {status === 'BLOCKED' ? <a className="rp-button" href="#policy-checks">View Blocking Requirements</a> : <Link className="rp-button" to={back}>Back to Resolution Plan</Link>}
         {!busy && !walkthrough && status === 'REVIEW_REQUIRED' && assessment?.verification?.state === 'UNAVAILABLE' && <ApprovalWalkthroughButton/>}
         {!busy && !context.block && ['BLOCKED', 'ELIGIBLE', 'APPROVAL_REQUIRED'].includes(status) &&
-          <button className="rp-button" type="button" onClick={() => run()}>Re-evaluate Policy</button>}
+          <button className="rp-button rp-primary-outline" type="button" onClick={() => run()}>Re-evaluate Policy</button>}
         {busy ? <button className="rp-button rp-primary" type="button" disabled>{busy === 'submitting' ? 'Checking submission…' : 'Assessing…'}</button> :
           status === 'BLOCKED' ? <Link className="rp-button rp-primary" to={latestPlanTo}>Return to Resolution Plan</Link> :
-          status === 'REVIEW_REQUIRED' ? <><button className="rp-button" type="button" onClick={() => run()}>Re-evaluate Policy</button>
+          status === 'REVIEW_REQUIRED' ? <><button className="rp-button rp-primary-outline" type="button" onClick={() => run()}>Re-evaluate Policy</button>
             <a className="rp-button rp-primary" href={firstRequired ? '#policy-control-' + firstRequired.id : '#policy-checks'}>Review Required Evidence</a></> :
           status === 'ELIGIBLE' ? <Link className="rp-button rp-primary" to={approvalTo}>Continue to Permitted Workflow<ArrowRight size={16} aria-hidden="true"/></Link> :
           submission ? <Link className="rp-button rp-primary" to={approvalTo}>Open Approval Center<ArrowRight size={16} aria-hidden="true"/></Link> :

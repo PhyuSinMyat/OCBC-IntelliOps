@@ -38,11 +38,23 @@ class PersistenceTests(unittest.TestCase):
             headers={'X-Investigation-Request-ID': request_id or str(uuid4())})
     def financial_fingerprint(self):
         with self.engine.connect() as conn:
-            return {t.name: sorted(repr(tuple(r)) for r in conn.execute(select(t)))
-                for t in Base.metadata.sorted_tables if t.name != 'investigation_records'}
+            result = {}
+            for table in Base.metadata.sorted_tables:
+                if table.name == 'investigation_records':
+                    continue
+                query = select(table)
+                if table.name == 'exceptions':
+                    query = select(*(column for column in table.c if column.name not in {'status', 'updated_at'}))
+                elif table.name in {'audit_events', 'exception_case_actions'}:
+                    action = table.c.action if table.name == 'audit_events' else table.c.action_type
+                    query = query.where(action != 'CASE_STATUS_CHANGED')
+                result[table.name] = sorted(repr(tuple(row)) for row in conn.execute(query))
+            return result
 
     def test_persist_read_restart_retry_and_staleness_without_provider_calls(self):
         self.provider(); before = self.financial_fingerprint(); request_id = str(uuid4())
+        case_path = '/api/exceptions/CASE-000004'
+        self.assertEqual(self.client.get(case_path).json()['status'], 'OPEN')
         result = self.start(request_id)
         self.assertEqual(result.status_code, 200, result.text)
         report = result.json(); self.assertEqual(report['persistence'], 'BACKEND_DATABASE')
@@ -62,6 +74,11 @@ class PersistenceTests(unittest.TestCase):
         self.assertFalse(item['stale']); self.assertEqual(item['report'], report)
         path = '/api/exceptions/CASE-000004/investigations/' + report['investigation_id']
         self.assertEqual(self.client.get(path).json()['investigations'][0]['report'], report)
+        case = self.client.get(case_path).json()
+        self.assertEqual(case['status'], 'IN_PROGRESS')
+        changes = [item for item in case['timeline'] if item['actionType'] == 'CASE_STATUS_CHANGED']
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(changes[0]['details']['reference'], request_id)
         self.assertEqual(before, self.financial_fingerprint())
         with Session(self.engine) as db, db.begin():
             db.get(ExceptionCase, 4).status = 'IN_PROGRESS'
@@ -71,6 +88,25 @@ class PersistenceTests(unittest.TestCase):
             db.get(ExceptionCase, 4).severity = 'LOW'  # Local fixture only, to prove stale history.
         stale = self.client.get(path).json()['investigations'][0]
         self.assertTrue(stale['stale']); self.assertEqual(stale['report'], report)
+
+    def test_historical_status_reconciliation_reads_saved_record_and_preserves_terminal_case(self):
+        from modules.intelliops.case_status import plan_case_status_reconciliation, reconcile_case_statuses
+        from shared.timestamps import utc_now
+
+        self.provider()
+        self.assertEqual(self.start().status_code, 200)
+        with Session(self.engine) as db, db.begin():
+            case = db.get(ExceptionCase, 4)
+            case.status = 'OPEN'
+            db.flush()
+            plan = plan_case_status_reconciliation(db)
+            self.assertEqual(case.status, 'OPEN')
+            self.assertEqual(reconcile_case_statuses(db, plan, utc_now()), 1)
+            self.assertEqual(case.status, 'IN_PROGRESS')
+            case.status = 'RESOLVED'
+            db.flush()
+            self.assertEqual(reconcile_case_statuses(db, plan_case_status_reconciliation(db), utc_now()), 0)
+            self.assertEqual(case.status, 'RESOLVED')
 
     def test_rejected_and_failed_requests_are_not_saved_as_accepted_reports_or_retried(self):
         for rejection in (True, False):

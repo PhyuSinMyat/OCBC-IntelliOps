@@ -3,6 +3,32 @@
 From the repository root, activate the project virtual environment and install
 `backend/requirements.txt` (or `backend/requirements-dev.txt` for tests).
 Set `DATABASE_URL` to a synthetic PostgreSQL development database in `backend/.env`.
+
+### Automatic exception detection
+
+Payment creation, scenario simulation and exception batches invoke a scoped scan after the payment transaction commits. The scan uses its own database session and the same rules as `POST /api/detection/run` (Scan Now). PostgreSQL uses a 1.5-second lock timeout and a 4-second per-statement timeout for automatic scans. Failures are recorded in the audit log when available and leave the committed financial result intact. Set `INTELLIOPS_AUTOMATIC_DETECTION=false` to disable automation while retaining manual scans.
+
+The existing case `created_at` is the first detection time. The existing detector lock, active-case uniqueness, stable transaction and rule identity, and ordered duplicate-pair identity apply to both paths. Existing resolved cases follow the detector's current recurrence rules.
+
+Run `python backend/run_overdue_detection.py --watch` as one separately supervised process to check overdue missing-ledger postings every 20 seconds. Each pass first filters for completed payments without a matched modern or legacy posting and considers at most 50 due payments. The process skips when another detector holds the advisory lock. FastAPI does not start the worker. Run the same command without `--watch` for one check. Both forms can create cases in the configured database, so use an isolated database for verification. The scheduled pass targets overdue observations and leaves recovery checks for the full manual scan.
+
+`GET /api/detection/status` requires the existing demo authentication. It reports post-commit availability and the last recorded success or failure. It does not report scheduler uptime.
+
+### Initial exception severity
+
+New cases store a rule-based severity assessment in their existing evidence and detection audit records. The detection-rule severity field remains available as legacy configuration metadata. Case creation uses the evidence assessment for the assigned severity.
+
+Critical severity applies to recent confirmed defects of the same type across distinct transactions and known sender-account owners. Eligible cohorts cover missing postings after cutoff, exact amount mismatches and posted currency or account discrepancies. An isolated or historical issue does not qualify. The default cohort requires 10 transactions and 3 distinct customers over 900 seconds, with a transaction in the last 300 seconds and at least 60 seconds between the earliest and latest transaction.
+
+Override the thresholds with `INTELLIOPS_SEVERITY_MIN_TRANSACTIONS`, `INTELLIOPS_SEVERITY_MIN_CUSTOMERS`, `INTELLIOPS_SEVERITY_WINDOW_SECONDS` or `INTELLIOPS_SEVERITY_RECENT_SECONDS`. Count thresholds have a minimum of 2, the full window has a minimum of 120 seconds, and the recent window is limited to the full window. Invalid integer values fall back to defaults.
+
+To review a one-time severity recalculation, run `python backend/recalculate_exception_severity.py` from the repository root with the backend dependencies installed. The default command opens a read-only PostgreSQL transaction and reports the configured target fingerprint, proposed distribution, and plan fingerprint. A recognized case with inconclusive current evidence receives Medium. Unsupported case types or missing primary payments block the update.
+
+After verifying the target and plan, run the same command with `--apply --confirm-target TARGET --confirm-plan PLAN --backup PATH`. Use a new backup path outside version control. The command rechecks the plan, backs up the case IDs and severities, updates only the current severity, and appends existing audit records for changed cases. Protected accounting, exception and investigation records are checked before commit. A changed plan or unavailable schema prevents the write.
+
+### Case status reconciliation
+
+Run `python backend/reconcile_case_statuses.py` for the read-only preview. After verifying the target and plan, supply `--apply --confirm-target TARGET --confirm-plan PLAN --backup PATH` to update cases and append audit entries in a single transaction. Existing durable investigation records and review notes support In Progress. Terminal cases and existing statuses without enough evidence are preserved. See [the approval persistence proposal](../docs/case-approval-persistence-proposal.md) for the remaining workflow stages.
 Then run from `backend/`:
 
 ```powershell

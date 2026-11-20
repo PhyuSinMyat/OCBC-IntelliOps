@@ -3,6 +3,7 @@ import os
 os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from types import SimpleNamespace
@@ -20,6 +21,10 @@ from modules.core_banking.seed import demo_id
 from modules.payment_processing.models import Transaction, PaymentInstruction, ProcessingEvent
 from modules.intelliops.models import DetectionRule, ExceptionCase, AuditEvent
 from modules.intelliops.detection import detect, insert_case
+from modules.intelliops.automatic_detection import run_after_commit
+from modules.intelliops.overdue_detection import scan_overdue
+from modules.intelliops.models import ExceptionCaseAction
+from modules.intelliops.severity_backfill import apply_severity_backfill, plan_severity_backfill
 
 NOW = datetime(2026, 11, 3, 3, tzinfo=timezone.utc)
 
@@ -48,6 +53,49 @@ class DetectionTests(unittest.TestCase):
             for name, value in values.items():
                 setattr(rule, name, value)
 
+    def test_automatic_duplicate_case_survives_manual_scan_and_replay(self):
+        with patch.dict(os.environ, {"INTELLIOPS_AUTOMATIC_DETECTION": "true"}):
+            payment = self.post("DUPLICATE")
+            case = self.cases(payment)[0]
+            self.assertEqual(case["severity"], "LOW")
+            self.assertEqual(case["status"], "OPEN")
+            self.assertEqual(datetime.fromisoformat(case["createdAt"]), NOW)
+            self.assertEqual(self.post("DUPLICATE")["id"], payment["id"])
+            run_after_commit(self.engine, [payment["id"]])
+            self.assertEqual(self.scan(), [])
+            self.assertEqual(self.cases(payment), [case])
+            status = self.client.get("/api/detection/status").json()
+            self.assertEqual(status["state"], "ENABLED")
+            self.assertIsNotNone(status["lastSuccessfulScan"])
+        with Session(self.engine) as db:
+            events = db.scalars(select(AuditEvent).where(AuditEvent.action == "EXCEPTION_DETECTED")).all()
+            self.assertEqual(len(events), 1)
+            self.assertEqual(db.scalar(select(func.count()).select_from(AuditEvent)
+                                       .where(AuditEvent.action == "AUTOMATIC_DETECTION_SUCCEEDED")), 1)
+
+    def test_post_commit_failure_does_not_undo_financial_records(self):
+        with patch.dict(os.environ, {"INTELLIOPS_AUTOMATIC_DETECTION": "true"}):
+            with patch("modules.intelliops.automatic_detection.detect", side_effect=RuntimeError):
+                payment = self.post("DUPLICATE")
+            self.assertEqual(self.client.get("/api/detection/status").json()["state"], "DEGRADED")
+        self.assertEqual(self.cases(payment), [])
+        with Session(self.engine) as db:
+            self.assertIsNotNone(self.tx(db, payment))
+            self.assertIsNotNone(db.scalar(select(AuditEvent).where(AuditEvent.action == "AUTOMATIC_DETECTION_FAILED")))
+            journals_before = db.scalar(select(func.count()).select_from(LedgerJournal))
+        self.assertEqual(len(self.scan()), 1)
+        with Session(self.engine) as db:
+            self.assertEqual(db.scalar(select(func.count()).select_from(LedgerJournal)), journals_before)
+
+    def test_post_commit_scan_respects_missing_ledger_cutoff(self):
+        with patch.dict(os.environ, {"INTELLIOPS_AUTOMATIC_DETECTION": "true"}):
+            payment = self.post("MISSING_LEDGER")
+            self.assertEqual(self.cases(payment), [])
+            self.assertEqual(scan_overdue(self.engine, NOW + timedelta(seconds=59)), [])
+            self.assertEqual(len(scan_overdue(self.engine, NOW + timedelta(seconds=61))), 1)
+            self.assertEqual(scan_overdue(self.engine, NOW + timedelta(seconds=62)), [])
+        self.assertEqual(datetime.fromisoformat(self.cases(payment)[0]["createdAt"]), NOW + timedelta(seconds=61))
+
     def test_default_rule_identity_all_five_and_read_api_contract(self):
         payments = {s: self.post(s, amount=str(100 + index), idempotency_key=f"detection-{s}") for index, s in enumerate(
                     ["DUPLICATE", "PROCESSING_FAILURE", "MISSING_LEDGER", "AMOUNT_MISMATCH", "UNMATCHED"])}
@@ -62,6 +110,30 @@ class DetectionTests(unittest.TestCase):
         snapshot = self.client.get("/api/banking-snapshot")
         self.assertEqual(snapshot.status_code, 200)
         self.assertEqual(len(snapshot.json()["exception_cases"]), 5)
+
+    def test_severity_backfill_preserves_case_and_financial_sources(self):
+        payment = self.post("PROCESSING_FAILURE")
+        case_id = self.scan()[0]
+        now = NOW + timedelta(seconds=61)
+        with Session(self.engine) as db, db.begin():
+            db.get(ExceptionCase, case_id).severity = "HIGH"
+        with Session(self.engine) as db, db.begin():
+            case = db.get(ExceptionCase, case_id)
+            original = (case.id, case.status, case.updated_at, case.evidence)
+            tx = self.tx(db, payment)
+            payment_state = (tx.id, tx.status, tx.amount)
+            assessments, blocked = plan_severity_backfill(db, now)
+            self.assertEqual(blocked, [])
+            self.assertEqual(case.severity, "HIGH")
+            self.assertFalse(db.new or db.dirty)
+            self.assertEqual(apply_severity_backfill(db, assessments, now, "TEST"), 1)
+            self.assertEqual(case.severity, "LOW")
+            self.assertEqual((case.id, case.status, case.updated_at, case.evidence), original)
+            self.assertEqual((tx.id, tx.status, tx.amount), payment_state)
+            event = db.scalar(select(ExceptionCaseAction).where(ExceptionCaseAction.action_type == "SEVERITY_RECALCULATED"))
+            self.assertEqual(event.details["severityAssessment"]["reasonCode"], "FAILURE_SAFELY_CONTAINED")
+            self.assertEqual(apply_severity_backfill(db, assessments, now, "TEST"), 0)
+        self.assertEqual(self.cases(payment)[0]["severity"], "LOW")
 
     def test_invalid_draft_reversed_unbalanced_missing_entries_and_timestamp(self):
         for number, fault in enumerate(["Draft", "Reversed", "unbalanced", "missing", "timestamp", "unposted"], 1):
@@ -140,14 +212,16 @@ class DetectionTests(unittest.TestCase):
         self.scan()
         self.assertEqual(self.cases(mismatch)[0]["exceptionType"], "Amount Mismatch")
 
-    def test_disabled_severity_and_invalid_configuration(self):
+    def test_disabled_rule_legacy_severity_and_invalid_configuration(self):
         self.scan(0)
         self.rule("PAYMENT_PROCESSING_FAILURE", enabled=False)
         p = self.post("PROCESSING_FAILURE")
         self.assertEqual(self.scan(), [])
         self.rule("PAYMENT_PROCESSING_FAILURE", enabled=True, severity="CRITICAL", version=2)
         self.scan()
-        self.assertEqual(self.cases(p)[0]["severity"], "CRITICAL")
+        case = self.cases(p)[0]
+        self.assertEqual(case["severity"], "LOW")
+        self.assertEqual(case["evidence"]["severityAssessment"]["reasonCode"], "FAILURE_SAFELY_CONTAINED")
         self.rule("PROCESSING_TIMEOUT", configuration={"inactivity_seconds": -1})
         response = self.client.post("/api/detection/run")
         self.assertEqual(response.status_code, 422)

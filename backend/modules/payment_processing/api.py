@@ -9,6 +9,7 @@ from modules.core_banking.router import get_db
 from modules.core_banking.models import Account, Customer, LedgerJournal, LedgerEntry
 from modules.intelliops.models import AuditEvent
 from modules.intelliops.detection import detect, case_dtos
+from modules.intelliops.automatic_detection import run_after_commit, status as detection_status
 from modules.intelliops.rules import DetectionConfigurationError
 from .models import Transaction, PaymentInstruction, ProcessingEvent
 from .schemas import PaymentRequest, ScenarioRequest, ExceptionBatchRequest, PaymentOut, PaymentPage, EventOut, RelatedOut
@@ -61,6 +62,7 @@ def list_payments(search: str = Query("", max_length=200),
 
 
 def submit(db, request, role, scenario):
+    replayed = True
     try:
         with db.begin():
             require_current_schema(db)
@@ -70,6 +72,7 @@ def submit(db, request, role, scenario):
         raise HTTPException(error.status, str(error)) from error
     except IntegrityError:
         # A concurrent request may have won the unique idempotency-key race.
+        replayed = True
         db.rollback()
         existing = db.scalar(select(PaymentInstruction).where(PaymentInstruction.idempotency_key == request.idempotency_key))
         if not existing or existing.request_fingerprint != fingerprint(request, scenario):
@@ -82,6 +85,8 @@ def submit(db, request, role, scenario):
                 reference=request.idempotency_key,
                 details={"reason": str(error), "financialChangesRolledBack": True}))
         raise HTTPException(422, "Ledger posting failed; financial changes were rolled back.") from error
+    if not replayed:
+        run_after_commit(db.get_bind(), [reference])
     return payment_dtos(db, [lookup(db, reference)])[0]
 
 
@@ -97,7 +102,7 @@ def post_scenario(request: ScenarioRequest, db=Depends(get_db), role=Depends(adm
             with db.begin():
                 require_current_schema(db)
                 batch = generate_duplicate(db, request, role) if request.duplicate_scenario else generate_exception_variant(db, request, role)
-            return run_result(db, batch)
+            result = run_result(db, batch)
         except PaymentError as error:
             raise HTTPException(error.status, str(error)) from error
         except IntegrityError as error:
@@ -106,6 +111,10 @@ def post_scenario(request: ScenarioRequest, db=Depends(get_db), role=Depends(adm
         except ValueError as error:
             db.rollback()
             raise HTTPException(422, 'Scenario posting failed; all financial changes rolled back.') from error
+        # Result projection starts a read transaction. Release it before the independent scan.
+        db.rollback()
+        run_after_commit(db.get_bind(), result["paymentReferences"])
+        return result
     return submit(db, request, role, request.scenario_code)
 
 
@@ -116,6 +125,7 @@ def post_exception_batch(request: ExceptionBatchRequest, db=Depends(get_db), rol
             require_current_schema(db)
             batch, transactions = create_exception_batch(db, request, role)
             references = [tx.reference for tx in transactions]
+        run_after_commit(db.get_bind(), references)
         return {"batchId": str(batch.batch_id), "status": batch.status, "created": len(references),
                 "exceptionTypes": batch.requested_scenarios, "countPerType": batch.count_per_type,
                 "transactionReferences": references}
@@ -163,6 +173,11 @@ def run_detection(db=Depends(get_db), role=Depends(actor)):
     except DetectionConfigurationError as error:
         raise HTTPException(422, str(error)) from error
     return {"created": len(ids), "caseIds": [f"CASE-{value:06d}" for value in ids]}
+
+
+@router.get("/detection/status")
+def read_detection_status(db=Depends(get_db), role=Depends(actor)):
+    return detection_status(db)
 
 
 @router.get("/exceptions")

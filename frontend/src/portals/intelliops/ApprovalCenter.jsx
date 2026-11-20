@@ -1,6 +1,9 @@
 ﻿import React, { useEffect, useRef, useState } from 'react';
+import { FilterReset, FilterSearch } from '../../shared/components/FilterControls.jsx';
+import CaseStatus from '../../shared/components/CaseStatus.jsx';
+import TablePagination, { useTablePagination } from '../../shared/components/TablePagination.jsx';
 import { Link, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Copy, FileCheck2, LockKeyhole, Search, ShieldCheck, TriangleAlert, XCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Copy, FileCheck2, LockKeyhole, ShieldCheck, TriangleAlert, XCircle } from 'lucide-react';
 import { backendConnected, useBankingRecords } from '../../shared/data/bankingRecords.js';
 import { displayTime, humanize } from './investigation/ReportSections.jsx';
 import { approvalBlock, approvalContext, approvalRequestSearch, getApprovalRequest, listApprovalRequests, recordApprovalDecision, validDecisionReason } from './resolution/approvalDemoService.js';
@@ -69,27 +72,26 @@ function Queue({ requests, cases }) {
     [request.caseId, request.requestId, request.planId, request.assessmentId, titleFor(request), actionLabel(request)].some(value => value?.toLowerCase().includes(term)))
     .sort((a, b) => Number(b.status === 'PENDING_APPROVAL') - Number(a.status === 'PENDING_APPROVAL') ||
       Date.parse(b.submittedAt) - Date.parse(a.submittedAt));
+  const pagination = useTablePagination(visible.length);
   return <>
     <div className="ac-kpis" aria-label="Approval counts">{Object.entries(statuses).map(([value, [label, tone, Icon]]) =>
       <div className="ac-panel ac-kpi" key={value}><span className={`ac-kpi-icon ac-${tone}`}><Icon size={18} aria-hidden="true"/></span><div><strong>{counts[value] || 0}</strong><span>{label}</span></div></div>)}</div>
     <section className="ac-panel" aria-labelledby="ac-queue-title">
-      <div className="ac-panel-heading"><h2 id="ac-queue-title">Approval queue</h2><label className="ac-search">
-        <Search size={17} aria-hidden="true"/><input type="search" value={search} onChange={event => setSearch(event.target.value)} placeholder="Search case, reference or action" aria-label="Search case, reference or action"/>
-      </label></div>
+      <div className="ac-panel-heading"><h2 id="ac-queue-title">Approval queue</h2><FilterSearch className="ac-filter-search" value={search} onChange={event => { setSearch(event.target.value); pagination.resetPage(); }} placeholder="Search case, reference or action" aria-label="Search case, reference or action"/></div>
       <div className="ac-filters" aria-label="Filter approvals" role="group">
         {['ALL', ...Object.keys(statuses)].map(value => <button key={value} type="button" aria-pressed={filter === value}
-          onClick={() => setFilter(value)}>{value === 'ALL' ? 'All' : statusLabel(value)}</button>)}
+          onClick={() => { setFilter(value); pagination.resetPage(); }}>{value === 'ALL' ? 'All' : statusLabel(value)}</button>)}
       </div>
       {visible.length ? <table className="ac-table">
-        <thead><tr>{['Case', 'Proposed action', 'Financial impact', 'Plan version', 'Submitted at', 'Status', 'Review'].map(label => <th key={label} scope="col">{label}</th>)}</tr></thead>
-        <tbody>{visible.map(request => {
+        <thead><tr>{['Case', 'Proposed action', 'Financial impact', 'Plan version', 'Submitted at', 'Status', 'Review'].map(label => <th key={label} scope="col" className={label === 'Financial impact' ? 'ac-impact' : undefined}>{label}</th>)}</tr></thead>
+        <tbody>{visible.slice(pagination.start, pagination.end).map(request => {
           const metrics = request.assessment?.verifiedFinancialMetrics || [];
           const impact = metrics.find(metric => metric.label === duplicateExcess) || metrics[0];
           return <tr key={request.requestId}>
             <td data-label="Case"><strong className="ac-case-title">{titleFor(request)}</strong>
               <span className="ac-case-cell"><span title={request.caseId}>{caseLabel(request.caseId)}</span><CopyReference label="case ID" value={request.caseId}/></span></td>
             <td data-label="Proposed action">{actionLabel(request)}</td>
-            <td data-label="Financial impact">{impact ? <><strong className={impact.label === duplicateExcess ? 'ac-excess-value' : undefined}>{impact.value}</strong><small>{impact.label}</small></> : 'Not verified'}</td>
+            <td data-label="Financial impact" className="ac-impact">{impact ? <><strong className={impact.label === duplicateExcess ? 'ac-excess-value' : undefined}>{impact.value}</strong><small>{impact.label}</small></> : 'Not verified'}</td>
             <td data-label="Plan version">{planVersion(request)}</td>
             <td data-label="Submitted at">{displayTime(request.submittedAt)}</td>
             <td data-label="Status"><Status status={request.status}/></td>
@@ -97,15 +99,17 @@ function Queue({ requests, cases }) {
           </tr>;
         })}</tbody>
       </table> : <div className="ac-empty"><FileCheck2 size={25} aria-hidden="true"/>
-        <h3>{requests.length ? 'No requests match your filters' : 'No approval requests yet'}</h3>
+        <h3>{requests.length ? 'No records match your filters.' : 'No approval requests yet'}</h3>
         <p>{requests.length ? 'Try another status or search term.' : 'Proposals submitted from Policy Assessment appear here.'}</p>
-        {!requests.length && <Link className="rp-button" to={workflow + '/plans'}>Open Resolution Plans</Link>}
+        {requests.length > 0 && <FilterReset onClick={() => { setSearch(''); setFilter('ALL'); pagination.resetPage(); }}>Clear filters</FilterReset>}
+        {!requests.length && <Link className="rp-button rp-primary" to={workflow + '/plans'}>Open Resolution Plans</Link>}
       </div>}
+      <TablePagination pagination={pagination} label="Approval pages" recordLabel="requests"/>
     </section>
   </>;
 }
 
-function ReviewSummary({ request, exceptionType, walkthrough }) {
+function ReviewSummary({ request, exceptionType, caseStatus, walkthrough }) {
   const metrics = request.assessment?.verifiedFinancialMetrics || [];
   const figures = ['Intended transfer', 'Posted transfer movement', duplicateExcess]
     .map(label => metrics.find(metric => metric.label === label && metric.value)).filter(Boolean);
@@ -114,6 +118,7 @@ function ReviewSummary({ request, exceptionType, walkthrough }) {
     <dl className="ac-facts">
       <div><dt>Case</dt><dd>{caseLabel(request.caseId)}</dd></div>
       <div><dt>Exception type</dt><dd>{exceptionType || 'Unavailable'}</dd></div>
+      <div><dt>Case status</dt><dd><CaseStatus value={caseStatus}/></dd></div>
       <div><dt>Submitted plan</dt><dd>{planVersion(request)}</dd></div>
       <div><dt>Proposed action</dt><dd>{actionLabel(request)}</dd></div>
       <div><dt>Submitted at</dt><dd>{displayTime(request.submittedAt)}</dd></div>
@@ -204,7 +209,8 @@ function Review({ request, params, banking, role, onSaved, walkthrough }) {
   const source = '?' + new URLSearchParams({ case: request.caseId, investigation: request.investigationId }).toString();
   const planTo = workflow + '/plans' + source + '&' + new URLSearchParams({ plan: request.planId, version: String(request.planVersion) }).toString();
   const policyTo = workflow + '/policy' + approvalRequestSearch(request);
-  const exceptionType = walkthrough?.record.exceptionType || (banking.exception_cases || []).find(item => item.id === request.caseId)?.exceptionType;
+  const caseRecord = (banking.exception_cases || []).find(item => item.id === request.caseId);
+  const exceptionType = walkthrough?.record.exceptionType || caseRecord?.exceptionType;
   const openDialog = decision => {
     setChoice(decision); setReason(''); setError('');
     dialog.current.showModal();
@@ -248,7 +254,7 @@ function Review({ request, params, banking, role, onSaved, walkthrough }) {
 
   return <>
     <Link className="rp-inline" to={root}><ArrowLeft size={16} aria-hidden="true"/>Back to approval queue</Link>
-    <ReviewSummary {...{ request, exceptionType, walkthrough }}/>
+    <ReviewSummary caseStatus={caseRecord?.status} {...{ request, exceptionType, walkthrough }}/>
     <div className="ac-review-grid">
     <LinkedReview {...{ request, source, planTo, policyTo, walkthrough }}/>
     <section className="ac-panel ac-decision" data-status={request.status} aria-labelledby="ac-decision-title">

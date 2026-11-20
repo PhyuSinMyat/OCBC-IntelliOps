@@ -54,7 +54,7 @@ def validate_configuration(spec, rule):
     return result
 
 
-def load_rules(db, now):
+def load_rules(db, now, *, read_only=False):
     """Materialize defaults only inside an authorized detection transaction.
 
     Migration also provisions defaults. This path supports metadata-created tests
@@ -78,12 +78,15 @@ def load_rules(db, now):
             rule = DetectionRule(code=spec.code, name=spec.exception_type, exception_type=spec.exception_type,
                                  description=spec.description, severity=spec.severity,
                                  configuration={}, version=1, enabled=True, updated_at=now)
-            db.add(rule)
+            if not read_only:
+                db.add(rule)
         elif rule.code is None:
             if rule.threshold is not None:
                 raise DetectionConfigurationError(f"Legacy threshold for {spec.code} requires explicit unit review.")
-            rule.code, rule.description, rule.updated_at = spec.code, spec.description, now
-        db.flush()
+            if not read_only:
+                rule.code, rule.description, rule.updated_at = spec.code, spec.description, now
+        if not read_only:
+            db.flush()
         loaded[spec.code] = (rule, validate_configuration(spec, rule))
     # Unknown legacy rules remain readable but cannot execute arbitrary conditions.
     return loaded

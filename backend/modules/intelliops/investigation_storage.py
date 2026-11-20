@@ -10,7 +10,8 @@ from sqlalchemy.orm import Mapped, mapped_column
 from shared.database import Base
 from shared.timestamps import utc_now
 from .investigation_projection import model_evidence
-from .service import CaseError, parse_case_id
+from .service import CaseError, get_case, parse_case_id
+from .case_status import record_case_work
 
 
 class InvestigationRecord(Base):
@@ -109,7 +110,9 @@ def reserve(db, case_id, request_id, role, evidence):
             return record, False
         record = InvestigationRecord(request_id=str(request_id), case_id=case, created_by=role,
             status='RUNNING', evidence_fingerprint=fingerprint(evidence))
+        locked_case = get_case(db, case_id, lock=True)
         db.add(record)
+        record_case_work(db, locked_case, role, record, utc_now())
         db.commit()  # Reserve durably BEFORE the external request, across workers/restarts.
         return record, True
     except IntegrityError:

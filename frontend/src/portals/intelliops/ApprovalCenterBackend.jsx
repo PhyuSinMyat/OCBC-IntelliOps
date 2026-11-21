@@ -99,18 +99,18 @@ function Review({ request, role, onUpdated }) {
       <FinancialFigures metrics={request.financialMetrics}/>
       <details className="ac-references"><summary>Technical references</summary><dl className="ac-facts"><div><dt>Request</dt><dd><code>{request.requestId}</code></dd></div><div><dt>Assessment</dt><dd><code>{request.assessmentId}</code></dd></div><div><dt>Customer snapshot</dt><dd><code>{request.customerSnapshotReference}</code></dd></div></dl></details>
     </section>
-    <div className="ac-review-grid"><section className="ac-panel ac-context-panel"><section><h2>AI Resolution Recommendation</h2><h3>{request.plan?.resolutionTitle}</h3><p>{request.plan?.summary}</p>
-      <div className="rp-actions ac-panel-links"><Link className="rp-inline" to={`/intelliops/workflows/plans${source}`}>View submitted resolution plan</Link><Link className="rp-inline" to={`/intelliops/investigation${source}`}>View investigation</Link></div></section>
+    <div className={`ac-review-grid${role === 'ADMIN' ? '' : ' ac-review-grid-readonly'}`}><section className="ac-panel ac-context-panel"><section><h2>AI Resolution Recommendation</h2><h3>{request.plan?.resolutionTitle}</h3><p>{request.plan?.summary}</p>
+      {role !== 'ADMIN' && <div className="rp-actions ac-panel-links"><Link className="rp-inline" to={`/intelliops/workflows/plans${source}`}>View submitted resolution plan</Link><Link className="rp-inline" to={`/intelliops/investigation${source}`}>View investigation</Link></div>}</section>
       <CustomerContext context={request.customerContext} plan={request.plan}/>
       <section><h2>Policy Assessment</h2><p><strong>{humanize(request.assessment?.status)}</strong> · Administrator review</p>
         <ul className="ac-checks">{request.assessment?.controls.map(control => <li key={control.id}><strong>{control.name}</strong><span>{humanize(control.status)}</span><p>{control.reason}</p></li>)}</ul>
-        <Link className="rp-inline ac-panel-links" to={`/intelliops/workflows/policy${source}`}>View Policy Assessment</Link></section></section>
-      <section className="ac-panel ac-decision" data-status={request.status}><div className="ac-panel-heading"><h2>{pending ? 'Administrator Decision' : 'Decision Receipt'}</h2><Status status={request.status}/></div>
+        {role !== 'ADMIN' && <Link className="rp-inline ac-panel-links" to={`/intelliops/workflows/policy${source}`}>View Policy Assessment</Link>}</section></section>
+      {role === 'ADMIN' && <section className="ac-panel ac-decision" data-status={request.status}><div className="ac-panel-heading"><h2>{pending ? 'Administrator Decision' : 'Decision Receipt'}</h2><Status status={request.status}/></div>
         {pending ? role !== 'ADMIN' ? <p>Awaiting Administrator review. Your current role is read-only.</p> : <><dl className="ac-decision-facts"><div><dt>Required approver</dt><dd>{request.requiredApproverRole}</dd></div><div><dt>Review eligibility</dt><dd>Eligible for review</dd></div></dl><div className="rp-actions ac-panel-links"><button className="rp-button ac-approve" onClick={() => openDecision('APPROVED')}>Approve</button><button className="rp-button ac-reject" onClick={() => openDecision('REJECTED')}>Decline</button></div>
           <p className="ac-decision-safety"><LockKeyhole size={15}/>The backend revalidates policy, evidence, plan currency, and customer context. No financial action is executed here.</p></> :
           <div className="ac-receipt"><dl className="ac-decision-facts"><div><dt>Acting role</dt><dd>{request.decision?.actingRole}</dd></div><div><dt>Recorded at</dt><dd>{displayTime(request.decision?.decidedAt)}</dd></div></dl><div className="ac-receipt-reason"><strong>Decision reason</strong><p>{request.decision?.reason}</p></div><p>No financial correction has been executed.</p></div>}
-      </section></div>
-    <dialog ref={dialog} className="ac-dialog" aria-labelledby="ac-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else setChoice(''); }}>
+      </section>}</div>
+    {role === 'ADMIN' && <dialog ref={dialog} className="ac-dialog" aria-labelledby="ac-confirm-title" onCancel={event => { if (busy) event.preventDefault(); else setChoice(''); }}>
       <form onSubmit={decide} noValidate><h2 id="ac-confirm-title">Confirm {choice === 'APPROVED' ? 'approval' : 'decline'}</h2>
         <p className="ac-dialog-context"><strong>{request.caseId} · V{request.planVersion}</strong><br/>{request.proposedActionLabel || humanize(request.proposedAction)}</p>
         <p>This records a durable Administrator decision for the next controlled workflow step.</p>
@@ -119,7 +119,7 @@ function Review({ request, role, onUpdated }) {
         <div className="rp-actions"><button className="rp-button" type="button" disabled={busy} onClick={() => { dialog.current?.close(); setChoice(''); }}>Cancel</button>
           <button className={`rp-button ${choice === 'APPROVED' ? 'ac-approve' : 'ac-reject'}`} disabled={busy}>{busy ? 'Revalidating…' : `Confirm ${choice === 'APPROVED' ? 'Approval' : 'Decline'}`}</button></div>
       </form>
-    </dialog>
+    </dialog>}
   </>;
 }
 

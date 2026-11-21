@@ -52,7 +52,7 @@ class GenericInvestigationTests(unittest.TestCase):
             with Session(self.engine) as db:
                 yield db
         app.dependency_overrides[get_db] = get_test_db
-        app.dependency_overrides[actor] = lambda: 'ADMIN'
+        app.dependency_overrides[actor] = lambda: 'ANALYST'
         self.client = TestClient(app)
         def resolution_handler(request):
             body = json.loads(request.content)

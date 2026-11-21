@@ -117,7 +117,7 @@ class GmailImapMailbox:
     def configured(cls):
         return cls(ImapSettings.load())
 
-    def scan(self, since):
+    def scan(self, since, reply_to_ids=()):
         client = None
         try:
             client = imaplib.IMAP4_SSL(self.settings.host, self.settings.port, timeout=self.settings.timeout)
@@ -126,10 +126,22 @@ class GmailImapMailbox:
             if status != "OK":
                 raise InboundEmailSyncError("Gmail mailbox could not be opened.")
             search_since = since.strftime("%d-%b-%Y")
-            status, data = client.uid("search", None, "SINCE", search_since)
-            if status != "OK":
-                raise InboundEmailSyncError("Gmail mailbox search failed.")
-            uids = (data[0] or b"").split()[-self.settings.max_messages:]
+            reply_to_ids = tuple(dict.fromkeys(value for value in reply_to_ids
+                if _message_id.fullmatch(value or "")))
+            if reply_to_ids:
+                candidates = set()
+                for message_id in reply_to_ids:
+                    status, data = client.uid("search", None, "SINCE", search_since, "OR",
+                        "HEADER", "In-Reply-To", message_id, "HEADER", "References", message_id)
+                    if status != "OK":
+                        raise InboundEmailSyncError("Gmail mailbox search failed.")
+                    candidates.update((data[0] or b"").split())
+                uids = sorted(candidates, key=lambda value: int(value))[-self.settings.max_messages:]
+            else:
+                status, data = client.uid("search", None, "SINCE", search_since)
+                if status != "OK":
+                    raise InboundEmailSyncError("Gmail mailbox search failed.")
+                uids = (data[0] or b"").split()[-self.settings.max_messages:]
             messages = []
             for uid in uids:
                 status, payload = client.uid("fetch", uid, "(BODY.PEEK[])")

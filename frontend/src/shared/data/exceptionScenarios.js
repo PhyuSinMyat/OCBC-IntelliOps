@@ -41,7 +41,7 @@ function localResult(state, run) {
 }
 
 export function processExceptionRun(state, input, { role = 'ANALYST', now = new Date().toISOString() } = {}) {
-  if (role !== 'ADMIN') throw new Error('Only ADMIN may run synthetic scenarios.');
+  if (role !== 'ANALYST') throw new Error('Only ANALYST may run synthetic scenarios.');
   const variant = exceptionScenarios.find(item => item.code === input.scenarioVariant);
   if (!variant || variant.scenarioCode !== input.scenario) throw new Error('Choose a supported scenario variant for this exception type.');
   const runKey = input.runKey || input.idempotencyKey;

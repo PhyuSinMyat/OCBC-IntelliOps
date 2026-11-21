@@ -74,8 +74,8 @@ def record_request(db, instruction, key, now, *, anchor=None, origin='CUSTOMER',
 
 
 def create_payment(db, request, role, scenario="NORMAL", now=None, *, _on_accepted=None):
-    if scenario != "NORMAL" and role != "ADMIN":
-        raise PaymentError("Only ADMIN may inject exception scenarios.", 403)
+    if scenario != "NORMAL" and role != "ANALYST":
+        raise PaymentError("Only ANALYST may inject exception scenarios.", 403)
     now = now or simulation_now()
     signature = fingerprint(request, scenario)
     def replay():

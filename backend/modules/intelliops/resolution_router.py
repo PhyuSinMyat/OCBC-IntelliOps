@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.exc import IntegrityError
 
 from modules.core_banking.router import get_db
-from shared.security import actor
+from shared.security import actor, analyst
 from .email_delivery import get_mailer
 from .inbound_email import get_inbound_mailbox
 from .resolution_llm import get_resolution_provider
@@ -27,7 +27,7 @@ def resolution_plans(case_id: str, investigation_id: str | None = Query(None), d
 
 
 @router.post("/{case_id}/resolution-plans", response_model=PlansOut)
-def create_resolution_plan(case_id: str, request: PlanGenerateRequest, db=Depends(get_db), role=Depends(actor),
+def create_resolution_plan(case_id: str, request: PlanGenerateRequest, db=Depends(get_db), role=Depends(analyst),
                            provider=Depends(get_resolution_provider)):
     try:
         return {"plans": generate_plan(db, case_id, request.investigation_id, request.expected_version, role, provider)}
@@ -50,7 +50,7 @@ def communications(case_id: str, investigation_id: str | None = Query(None), db=
 
 @router.post("/{case_id}/communications", response_model=CommunicationsOut)
 def record_communication(case_id: str, request: CommunicationCreateRequest, db=Depends(get_db),
-                         role=Depends(actor), mailer=Depends(get_mailer)):
+                         role=Depends(analyst), mailer=Depends(get_mailer)):
     try:
         items, revision = create_communication(db, case_id, request, role, mailer)
         return {"communications": items, "contextRevision": revision,
@@ -61,7 +61,7 @@ def record_communication(case_id: str, request: CommunicationCreateRequest, db=D
 
 @router.post("/{case_id}/communications/sync-inbox", response_model=InboxSyncOut)
 def sync_communication_inbox(case_id: str, investigation_id: str = Query(...), db=Depends(get_db),
-                             role=Depends(actor), mailbox=Depends(get_inbound_mailbox)):
+                             role=Depends(analyst), mailbox=Depends(get_inbound_mailbox)):
     try:
         items, revision, imported, scanned = sync_inbound_email(
             db, case_id, investigation_id, mailbox, role)
@@ -77,7 +77,7 @@ def sync_communication_inbox(case_id: str, investigation_id: str = Query(...), d
 
 @router.post("/{case_id}/communications/{communication_id}/retry-email", response_model=CommunicationsOut)
 def retry_communication_email(case_id: str, communication_id: str, db=Depends(get_db),
-                              role=Depends(actor), mailer=Depends(get_mailer)):
+                              role=Depends(analyst), mailer=Depends(get_mailer)):
     try:
         items, revision = retry_email(db, case_id, communication_id, mailer, role)
         return {"communications": items, "contextRevision": revision,
@@ -95,7 +95,7 @@ def policy_assessments(case_id: str, db=Depends(get_db), role=Depends(actor)):
 
 
 @router.post("/{case_id}/policy-assessments", response_model=dict)
-def create_policy_assessment(case_id: str, request: PolicyAssessmentRequest, db=Depends(get_db), role=Depends(actor)):
+def create_policy_assessment(case_id: str, request: PolicyAssessmentRequest, db=Depends(get_db), role=Depends(analyst)):
     try:
         return assess_policy(db, case_id, request.plan_id, role)
     except CaseError as error:

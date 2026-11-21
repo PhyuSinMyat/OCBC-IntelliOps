@@ -272,8 +272,8 @@ def list_communications(db, case_id, investigation_id=None):
 
 def sync_inbound_email(db, case_id, investigation_id, mailbox, role):
     case = get_case(db, case_id)
-    if role != "ADMIN":
-        raise CaseError("Only ADMIN may synchronize the customer reply mailbox.", 403)
+    if role != "ANALYST":
+        raise CaseError("Only ANALYST may synchronize the customer reply mailbox.", 403)
     if mailbox is None:
         raise CaseError("Inbound Gmail synchronization is not configured.", 503)
     _accepted(db, case_id, investigation_id)
@@ -288,7 +288,7 @@ def sync_inbound_email(db, case_id, investigation_id, mailbox, role):
     lookback = getattr(getattr(mailbox, "settings", None), "lookback_days", 30)
     since = utc_now() - timedelta(days=lookback)
     try:
-        messages = mailbox.scan(since)
+        messages = mailbox.scan(since, tuple(by_message_id))
     except InboundEmailSyncError as error:
         raise CaseError(str(error), 502) from error
     imported = 0
@@ -350,8 +350,8 @@ def _deliver_email(db, case_id, communication_id, mailer, role, retry=False):
         EmailDelivery.communication_id == communication_id).with_for_update()) if communication else None
     if not communication or not delivery:
         raise CaseError("Email delivery record was not found for this case.", 404)
-    if role != "ADMIN":
-        raise CaseError("Only ADMIN may send customer email.", 403)
+    if role != "ANALYST":
+        raise CaseError("Only ANALYST may send customer email.", 403)
     allowed = {"FAILED"} if retry else {"PENDING"}
     if delivery.status not in allowed:
         if delivery.status == "SENT":
@@ -420,8 +420,8 @@ def create_communication(db, case_id, request, role, mailer=None):
     if email_delivery:
         if request.direction != "OUTGOING":
             raise CaseError("Only outgoing communications can be delivered by email.", 422)
-        if role != "ADMIN":
-            raise CaseError("Only ADMIN may send customer email.", 403)
+        if role != "ANALYST":
+            raise CaseError("Only ANALYST may send customer email.", 403)
         if mailer is None:
             raise CaseError("Outbound customer email is not configured.", 503)
         if not request.recipient_email:

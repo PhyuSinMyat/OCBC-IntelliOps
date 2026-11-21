@@ -28,7 +28,7 @@ for (const [index, variant] of exceptionScenarios.entries()) {
     const receiver = accounts.find(account => account.id === 'ACC-100001');
     const input = { senderId: sender.id, receiverId: receiver.id, amount: '123.45', scenario: variant.scenarioCode,
       scenarioVariant: variant.code, runKey: `variant-run-${index}` };
-    const options = { role: 'ADMIN', now: '2026-11-03T03:00:00Z' };
+    const options = { role: 'ANALYST', now: '2026-11-03T03:00:00Z' };
     const { state, payment: result } = processExceptionRun(before, input, options);
     const postings = ['AMOUNT_MISMATCH', 'UNMATCHED'].includes(variant.scenarioCode) ? 1 : 0;
     assert.equal(result.attemptCount, 1);
@@ -54,11 +54,11 @@ for (const [index, variant] of exceptionScenarios.entries()) {
   });
 }
 
-test('variant validation is ADMIN-only and atomic', () => {
+test('variant validation is ANALYST-only and atomic', () => {
   const state = initialRecords();
   const input = { senderId: 'ACC-100003', receiverId: 'ACC-100001', amount: '10.00', scenario: 'MISSING_LEDGER',
     scenarioVariant: 'POSTING_EVENT_LOST', runKey: 'validation-run' };
-  assert.throws(() => processExceptionRun(state, input, { role: 'ANALYST' }), /ADMIN/);
-  assert.throws(() => processExceptionRun(state, { ...input, scenario: 'AMOUNT_MISMATCH' }, { role: 'ADMIN' }), /supported scenario variant/);
+  assert.throws(() => processExceptionRun(state, input, { role: 'ADMIN' }), /ANALYST/);
+  assert.throws(() => processExceptionRun(state, { ...input, scenario: 'AMOUNT_MISMATCH' }, { role: 'ANALYST' }), /supported scenario variant/);
   assert.deepEqual(state, initialRecords());
 });

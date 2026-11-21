@@ -63,6 +63,7 @@
 .ac-references { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--ac-border); }
 .ac-workspace summary { color: #244e75; font-size: 13px; font-weight: 700; cursor: pointer; }
 .ac-review-grid { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.ac-review-grid-readonly { grid-template-columns: minmax(0, 1fr); }
 .ac-review-grid h2 + h3, .ac-review-grid h2 + p { margin-top: 8px; }
 .ac-context-panel > section + section { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--ac-border); }
 .ac-workspace .ac-policy-result { margin-top: 10px; }

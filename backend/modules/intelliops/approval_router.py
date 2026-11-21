@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from modules.core_banking.router import get_db
-from shared.security import actor
+from shared.security import actor, administrator, analyst
 from .approval_workflow import create_request, decide_request, get_request, list_requests
 from .resolution_models import ApprovalRequest
 from .service import CaseError
@@ -53,7 +53,7 @@ def approval(request_id: str, db=Depends(get_db), role=Depends(actor)):
 
 
 @router.post("")
-def submit(request: ApprovalCreate, db=Depends(get_db), role=Depends(actor)):
+def submit(request: ApprovalCreate, db=Depends(get_db), role=Depends(analyst)):
     try:
         return create_request(db, request.assessment_id, role)
     except CaseError as error:
@@ -68,7 +68,7 @@ def submit(request: ApprovalCreate, db=Depends(get_db), role=Depends(actor)):
 
 
 @router.post("/{request_id}/decision")
-def decide(request_id: str, request: ApprovalDecision, db=Depends(get_db), role=Depends(actor)):
+def decide(request_id: str, request: ApprovalDecision, db=Depends(get_db), role=Depends(administrator)):
     try:
         return decide_request(db, request_id, request.decision, request.reason, role)
     except CaseError as error:

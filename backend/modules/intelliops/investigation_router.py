@@ -4,7 +4,7 @@ from uuid import UUID
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from modules.core_banking.router import get_db
-from shared.security import actor, administrator
+from shared.security import actor, analyst
 from .service import CaseError
 from .investigation_evidence import retrieve_evidence
 from .investigation_amount import retrieve_amount_evidence
@@ -50,7 +50,7 @@ def investigation_evidence(case_id: str, db: Session = Depends(get_db), role=Dep
 
 
 @router.post("/{case_id}/investigations")
-def start_investigation(case_id: str, db: Session = Depends(get_db), role=Depends(actor),
+def start_investigation(case_id: str, db: Session = Depends(get_db), role=Depends(analyst),
                         provider=Depends(get_investigation_provider),
                         request_id: UUID | None = Header(None, alias='X-Investigation-Request-ID')):
     def execute():
@@ -120,7 +120,7 @@ def list_investigations(case_id: str, limit: int = Query(20, ge=1, le=50), offse
 
 
 @router.post('/{case_id}/investigations/import')
-def import_investigation(case_id: str, request: InvestigationImportRequest, db: Session = Depends(get_db), role=Depends(administrator)):
+def import_investigation(case_id: str, request: InvestigationImportRequest, db: Session = Depends(get_db), role=Depends(analyst)):
     """Revalidate and persist a browser-session backend report without a provider call."""
     try:
         report = request.report

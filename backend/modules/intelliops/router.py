@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from modules.core_banking.router import get_db
-from shared.security import actor, administrator
+from shared.security import actor, analyst
 from .schemas import CaseNoteRequest, RemediationRequest, CloseCaseRequest, CaseDetailOut
 from .service import CaseError, add_note, case_detail, close_case, get_case
 from .resolution import remediate_exception
@@ -22,7 +22,7 @@ def exception_detail(case_id: str, db=Depends(get_db), role=Depends(actor)):
 
 
 @router.post("/{case_id}/notes", response_model=CaseDetailOut)
-def note(case_id: str, request: CaseNoteRequest, db=Depends(get_db), role=Depends(actor)):
+def note(case_id: str, request: CaseNoteRequest, db=Depends(get_db), role=Depends(analyst)):
     try:
         with db.begin():
             case = add_note(db, case_id, request.note, role)
@@ -32,7 +32,7 @@ def note(case_id: str, request: CaseNoteRequest, db=Depends(get_db), role=Depend
 
 
 @router.post("/{case_id}/remediate", response_model=CaseDetailOut)
-def remediate(case_id: str, request: RemediationRequest, db=Depends(get_db), role=Depends(administrator)):
+def remediate(case_id: str, request: RemediationRequest, db=Depends(get_db), role=Depends(analyst)):
     try:
         with db.begin():
             from shared.schema import require_current_schema
@@ -44,7 +44,7 @@ def remediate(case_id: str, request: RemediationRequest, db=Depends(get_db), rol
 
 
 @router.post("/{case_id}/close", response_model=CaseDetailOut)
-def close(case_id: str, request: CloseCaseRequest, db=Depends(get_db), role=Depends(actor)):
+def close(case_id: str, request: CloseCaseRequest, db=Depends(get_db), role=Depends(analyst)):
     try:
         with db.begin():
             case = close_case(db, case_id, request.note, role)

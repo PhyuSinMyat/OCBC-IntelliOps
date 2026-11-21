@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 
 for (const [code, postings] of [['CUSTOMER_DOUBLE_CLICK', 1], ['AUTOMATIC_RETRY_FAILURE', 2], ['LEGITIMATE_REPEATED_PAYMENTS', 2]]) {
   test(`connected ${code} persists two requests and detects a pair`, async ({ page }) => {
-    await page.addInitScript(() => sessionStorage.setItem('intelliops-api-token', 'integration-test-admin-only'));
+    await page.addInitScript(() => sessionStorage.setItem('intelliops-api-token', 'integration-test-analyst-only'));
     await page.goto('/payments/transactions');
     await page.getByRole('button', { name: 'Create Synthetic Payment', exact: true }).click();
     await page.getByLabel('Sender account', { exact: true }).selectOption('ACC-100003');

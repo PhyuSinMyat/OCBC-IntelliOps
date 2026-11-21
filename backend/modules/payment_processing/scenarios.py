@@ -37,15 +37,15 @@ def instruction_execution(db, anchor_id, lookup=None):
 
 def fault_guard(request, role):
     allowed = {v.strip() for v in os.getenv('INTELLIOPS_SYNTHETIC_ACCOUNT_REFS', '').split(',') if v.strip()}
-    if (role != 'ADMIN' or os.getenv('INTELLIOPS_ENABLE_RETRY_FAULT') != 'true'
+    if (role != 'ANALYST' or os.getenv('INTELLIOPS_ENABLE_RETRY_FAULT') != 'true'
             or os.getenv('INTELLIOPS_ENVIRONMENT') not in {'development', 'test'}
             or not {request.sender_account_ref, request.receiver_account_ref} <= allowed):
         raise PaymentError('Retry fault requires explicit development/test enablement and allowlisted synthetic accounts.', 403)
 
 
 def generate_duplicate(db, request, role):
-    if role != 'ADMIN':
-        raise PaymentError('Only ADMIN may generate scenarios.', 403)
+    if role != 'ANALYST':
+        raise PaymentError('Only ANALYST may generate scenarios.', 403)
     if request.duplicate_scenario == B:
         fault_guard(request, role)
     if db.bind.dialect.name == 'postgresql':
@@ -168,8 +168,8 @@ def generate_duplicate(db, request, role):
 
 def generate_exception_variant(db, request, role):
     """Create one evidence-rich non-duplicate scenario through ordinary execution."""
-    if role != 'ADMIN':
-        raise PaymentError('Only ADMIN may generate scenarios.', 403)
+    if role != 'ANALYST':
+        raise PaymentError('Only ANALYST may generate scenarios.', 403)
     if request.scenario_code not in OTHER_VARIANTS or request.scenario_variant not in OTHER_VARIANTS[request.scenario_code]:
         raise PaymentError('Scenario variant does not match its exception type.')
     if db.bind.dialect.name == 'postgresql':

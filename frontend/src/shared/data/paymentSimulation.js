@@ -18,7 +18,7 @@ export function nextReference(state) {
 export function processPayment(state, input, { role = 'ANALYST', now = new Date().toISOString() } = {}) {
   const scenario = input.scenario || 'NORMAL';
   if (!Object.hasOwn(scenarios, scenario)) throw new Error('Unsupported simulation scenario.');
-  if (scenario !== 'NORMAL' && role !== 'ADMIN') throw new Error('Only the ADMIN demo role may inject scenarios.');
+  if (scenario !== 'NORMAL' && role !== 'ANALYST') throw new Error('Only the ANALYST demo role may inject scenarios.');
   if (!input.idempotencyKey) throw new Error('An idempotency key is required.');
   const amountCents = parseAmount(input.amount);
   const signature = JSON.stringify([input.senderId, input.receiverId, amountCents, scenario]);

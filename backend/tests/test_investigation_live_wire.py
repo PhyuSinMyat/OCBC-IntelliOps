@@ -77,7 +77,7 @@ class ExistingCaseWireTests(unittest.TestCase):
         def no_source_database():
             yield None
         app.dependency_overrides[get_db] = no_source_database
-        app.dependency_overrides[actor] = lambda: 'ADMIN'
+        app.dependency_overrides[actor] = lambda: 'ANALYST'
         app.dependency_overrides[get_investigation_provider] = lambda: provider
         try:
             with patch('modules.intelliops.investigation_router.collect', return_value=deepcopy(evidence)), \

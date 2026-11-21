@@ -121,7 +121,7 @@ AI Investigation must retrieve the actual operational evidence for the case bein
 | **Payment Processing** | Transactions; Create Synthetic Payment; transaction overview, Processing History and related records | A/B/C scenario selection is under **Duplicate Transaction**. |
 | **Core Banking / Ledger** | Accounts; Ledger Journals; journal details and debit/credit lines | Balanced individual journals are required; a missing/incorrect posting must not be fabricated to reconcile a case. |
 
-Two demo roles are documented: **Operations Analyst** (read/investigate/review) and **Administrator** (additional privileged simulation/approval operations where implemented). Enforce permissions on the **server**, not just by hiding UI buttons. The specific investigation route may accept either role depending on current route code.
+Two demo roles are documented: **Operations Analyst** (the complete operational workflow, including simulation, investigation, resolution, customer communication and approval submission) and **Administrator** (approval-request review and approve/reject decisions only). Permissions are enforced on the server, not just by hiding UI buttons.
 
 ## Duplicate-transaction scenarios
 

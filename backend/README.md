@@ -142,7 +142,7 @@ Migration `20261119_10` removes the simulation-only communication constraint and
 adds a durable `email_deliveries` outbox. Apply it through the normal reviewed
 Alembic deployment; the application does not migrate the database at startup.
 
-Real email is ADMIN-only and remains disabled unless `INTELLIOPS_EMAIL_ENABLED`
+Real email is ANALYST-only and remains disabled unless `INTELLIOPS_EMAIL_ENABLED`
 is true. Configure the SMTP and sender variables documented in `.env.example`.
 `STARTTLS` is the default transport security. `INTELLIOPS_EMAIL_ALLOWED_DOMAINS`
 can restrict recipients during development or staged rollout.

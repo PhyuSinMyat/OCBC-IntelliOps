@@ -34,7 +34,7 @@ test('ownership, status, currency and funds validation precedes all ledger chang
 test('all five source scenarios are independently detectable after cutoffs without duplicate cases', () => {
   let state = initialRecords();
   for (const [index, scenario] of ['DUPLICATE', 'PROCESSING_FAILURE', 'MISSING_LEDGER', 'AMOUNT_MISMATCH', 'UNMATCHED'].entries()) {
-    const result = processPayment(state, request({ scenario, amount: String(100 + index), idempotencyKey: scenario }), { role: 'ADMIN', now });
+    const result = processPayment(state, request({ scenario, amount: String(100 + index), idempotencyKey: scenario }), { role: 'ANALYST', now });
     state = result.state;
     assert.equal(state.exception_cases?.length || 0, 0);
   }
@@ -50,7 +50,7 @@ test('all five source scenarios are independently detectable after cutoffs witho
   assert.equal(detectPayments(detected, { now: later }).exception_cases.length, 5);
   assert.ok(detected.exception_cases.every(c => c.status === 'OPEN'));
   assert.equal(detected.ledger_journals.length, 5);
-  assert.throws(() => processPayment(initialRecords(), request({ scenario: 'MISSING_LEDGER' }), { role: 'ANALYST', now }), /ADMIN/);
+  assert.throws(() => processPayment(initialRecords(), request({ scenario: 'MISSING_LEDGER' }), { role: 'ADMIN', now }), /ANALYST/);
 });
 test('combined search, Singapore date windows and sorting do not mutate source', () => {
   const records = initialRecords().payment_transactions;

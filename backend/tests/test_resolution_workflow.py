@@ -30,6 +30,7 @@ class ResolutionWorkflowTests(unittest.TestCase):
 
     def setUp(self):
         investigation.InvestigationTests.setUp(self)
+        app.dependency_overrides[actor] = lambda: "ANALYST"
         self.environment = patch.dict(os.environ, {
             "INTELLIOPS_INVESTIGATION_PERSISTENCE": "true",
             "OPENAI_API_KEY": "offline-key",
@@ -116,6 +117,21 @@ class ResolutionWorkflowTests(unittest.TestCase):
         self.assertEqual(message.json()["contextRevision"], 1)
         self.assertEqual(message.json()["recipient"]["customerId"], account["customerRef"])
         self.assertEqual(message.json()["recipient"]["transactionId"], payment["id"])
+
+        app.dependency_overrides[actor] = lambda: "ADMIN"
+        denied_email = self.client.post("/api/exceptions/CASE-000004/communications", json={
+            "investigation_id": investigation_id,
+            "customer_id": account["customerRef"],
+            "related_transaction_id": payment["id"],
+            "direction": "OUTGOING",
+            "communication_type": "INCIDENT_NOTIFICATION",
+            "subject": "Administrator must not send this message",
+            "body": "Operational communication remains an Analyst responsibility.",
+            "recipient_email": "customer@example.com",
+            "delivery_mode": "EMAIL",
+        })
+        self.assertEqual(denied_email.status_code, 403, denied_email.text)
+        app.dependency_overrides[actor] = lambda: "ANALYST"
 
         reassessed = self.client.post("/api/exceptions/CASE-000004/resolution-plans", json={
             "investigation_id": investigation_id, "expected_version": 1,
@@ -311,7 +327,8 @@ class ResolutionWorkflowTests(unittest.TestCase):
 
         class Mailbox:
             settings = SimpleNamespace(mailbox='INBOX', lookback_days=30)
-            def scan(self, since):
+            def scan(self, since, reply_to_ids=()):
+                self.reply_to_ids = reply_to_ids
                 return [InboundMessage('<gmail-reply@example.com>', '42', 'customer@example.com',
                     'Re: Payment review update', 'Please explain the next steps.', reply_to,
                     (reply_to,), datetime.now(timezone.utc))]
@@ -320,6 +337,7 @@ class ResolutionWorkflowTests(unittest.TestCase):
         path = f"/api/exceptions/CASE-000004/communications/sync-inbox?investigation_id={self.report['investigation_id']}"
         imported = self.client.post(path)
         self.assertEqual(imported.status_code, 200, imported.text)
+        self.assertEqual(mailbox.reply_to_ids, (reply_to,))
         self.assertEqual(imported.json()['importedCount'], 1)
         self.assertEqual(imported.json()['contextRevision'], 2)
         incoming = imported.json()['communications'][-1]
@@ -349,6 +367,7 @@ class InvestigationImportRecoveryTests(unittest.TestCase):
 
     def setUp(self):
         investigation.InvestigationTests.setUp(self)
+        app.dependency_overrides[actor] = lambda: "ANALYST"
         self.fixture('B')
 
     def tearDown(self):

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-const token = 'integration-test-admin-only';
+const token = 'integration-test-analyst-only';
 const localData = JSON.stringify({
   payment_transactions: [{ id: 'TXN-BROWSER-ONLY', status: 'Completed', amountCents: 999999999 }],
   ledger_journals: [], ledger_entries: [],

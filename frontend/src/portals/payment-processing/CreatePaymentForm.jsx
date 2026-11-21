@@ -46,7 +46,7 @@ export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
     lock.current = true;
     setBusy(true);
     try {
-      const payment = await createSyntheticPayment({ ...values, runKey: key.current, scenario: role === 'ADMIN' ? values.scenario : 'NORMAL', idempotencyKey: key.current }, role);
+      const payment = await createSyntheticPayment({ ...values, runKey: key.current, scenario: role === 'ANALYST' ? values.scenario : 'NORMAL', idempotencyKey: key.current }, role);
       onCreated(payment);
     } catch (error) { setErrors({ [/funds|amount/i.test(error.message) ? 'amount' : /currency|receiver/i.test(error.message) ? 'receiverId' : 'submit']: error.message }); }
     finally { lock.current = false; setBusy(false); }
@@ -63,11 +63,11 @@ export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
     <p className="payment-currency">Currency: <strong>{sender && receiver && sender.currency === receiver.currency ? sender.currency : 'Select compatible accounts'}</strong></p>
     <fieldset className="payment-exception-options">
       <legend>Exception simulation</legend>
-      {role === 'ADMIN' ? <label htmlFor="payment-exception-type">Exception type<select id="payment-exception-type" value={values.scenario} onChange={e => change('scenario', e.target.value)} disabled={busy}>
+      {role === 'ANALYST' ? <label htmlFor="payment-exception-type">Exception type<select id="payment-exception-type" value={values.scenario} onChange={e => change('scenario', e.target.value)} disabled={busy}>
         <option value="NORMAL">No exception (Normal Payment)</option>
         {selectableScenarios.map(code => <option value={code} key={code}>{scenarios[code]}</option>)}
-      </select></label> : <p>Exception injection is restricted to the ADMIN {backendConnected ? 'role' : 'local demo role'}. This payment will use normal processing.</p>}
-      {role === 'ADMIN' && values.scenario === 'DUPLICATE' && <>
+      </select></label> : <p>Exception injection is restricted to the ANALYST {backendConnected ? 'role' : 'local demo role'}. This payment will use normal processing.</p>}
+      {role === 'ANALYST' && values.scenario === 'DUPLICATE' && <>
         <label htmlFor="duplicate-scenario">Duplicate Transaction Scenario<select id="duplicate-scenario" value={values.duplicateScenario}
           onChange={e => change('duplicateScenario', e.target.value)} disabled={busy}>
           {duplicateScenarios.map(s => <option key={s.code} value={s.code}>{s.label}</option>)}
@@ -75,7 +75,7 @@ export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
         <p className="history-caption">{duplicateScenarios.find(s => s.code === values.duplicateScenario)?.description}
           {!backendConnected && ' Local-only simulation: saved in this browser, not PostgreSQL.'}</p>
       </>}
-      {role === 'ADMIN' && variantsFor(values.scenario).length > 0 && <>
+      {role === 'ANALYST' && variantsFor(values.scenario).length > 0 && <>
         <label htmlFor="exception-scenario-variant">Real-world scenario<select id="exception-scenario-variant" value={values.scenarioVariant}
           onChange={e => change('scenarioVariant', e.target.value)} disabled={busy}>
           {variantsFor(values.scenario).map(item => <option key={item.code} value={item.code}>{item.label}</option>)}
@@ -83,7 +83,7 @@ export default function CreatePaymentForm({ open, onClose, onCreated, role }) {
         <p className="history-caption">{variantsFor(values.scenario).find(item => item.code === values.scenarioVariant)?.description}
           {!backendConnected && ' Local-only simulation: saved in this browser, not PostgreSQL.'}</p>
       </>}
-      {values.scenario !== 'DUPLICATE' && variantsFor(values.scenario).length === 0 && <p className="payment-scenario-help">{role === 'ADMIN' ? scenarioHelp[values.scenario] : scenarioHelp.NORMAL}</p>}
+      {values.scenario !== 'DUPLICATE' && variantsFor(values.scenario).length === 0 && <p className="payment-scenario-help">{role === 'ANALYST' ? scenarioHelp[values.scenario] : scenarioHelp.NORMAL}</p>}
       <p className="history-caption">Exception scenarios generate source evidence; they do not create cases directly. Run detection separately. Reconciliation-dependent cases use a {records.reconciliationSeconds || 60}-second cutoff.</p>
     </fieldset>
     {errors.submit && <p role="alert" className="movement-out">{errors.submit}</p>}

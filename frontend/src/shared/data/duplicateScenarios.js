@@ -15,7 +15,7 @@ function fingerprint(value) {
 }
 
 export function processDuplicateRun(state, input, { role = 'ANALYST', now = new Date().toISOString() } = {}) {
-  if (role !== 'ADMIN') throw new Error('Only ADMIN may run synthetic scenarios.');
+  if (role !== 'ANALYST') throw new Error('Only ANALYST may run synthetic scenarios.');
   if (!duplicateScenarios.some(s => s.code === input.duplicateScenario)) throw new Error('Choose a supported duplicate scenario.');
   const runKey = input.runKey || input.idempotencyKey;
   if (!runKey) throw new Error('A scenario run key is required.');

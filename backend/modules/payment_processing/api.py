@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select, func, or_, asc, desc
 from sqlalchemy.orm import aliased, defer
 from sqlalchemy.exc import IntegrityError
-from shared.security import actor, administrator
+from shared.security import actor, analyst
 from modules.core_banking.router import get_db
 from modules.core_banking.models import Account, Customer, LedgerJournal, LedgerEntry
 from modules.intelliops.models import AuditEvent
@@ -91,12 +91,12 @@ def submit(db, request, role, scenario):
 
 
 @router.post("/payments", response_model=PaymentOut, status_code=201)
-def post_payment(request: PaymentRequest, db=Depends(get_db), role=Depends(actor)):
+def post_payment(request: PaymentRequest, db=Depends(get_db), role=Depends(analyst)):
     return submit(db, request, role, "NORMAL")
 
 
 @router.post("/demo/payments/scenario", response_model=ScenarioOut | PaymentOut, status_code=201)
-def post_scenario(request: ScenarioRequest, db=Depends(get_db), role=Depends(administrator)):
+def post_scenario(request: ScenarioRequest, db=Depends(get_db), role=Depends(analyst)):
     if request.duplicate_scenario or request.scenario_variant:
         try:
             with db.begin():
@@ -119,7 +119,7 @@ def post_scenario(request: ScenarioRequest, db=Depends(get_db), role=Depends(adm
 
 
 @router.post("/demo/exception-batches", status_code=201)
-def post_exception_batch(request: ExceptionBatchRequest, db=Depends(get_db), role=Depends(administrator)):
+def post_exception_batch(request: ExceptionBatchRequest, db=Depends(get_db), role=Depends(analyst)):
     try:
         with db.begin():
             require_current_schema(db)
@@ -165,7 +165,7 @@ def related_records(payment_id: str, db=Depends(get_db), role=Depends(actor)):
 
 
 @router.post("/detection/run")
-def run_detection(db=Depends(get_db), role=Depends(actor)):
+def run_detection(db=Depends(get_db), role=Depends(analyst)):
     try:
         with db.begin():
             require_current_schema(db)

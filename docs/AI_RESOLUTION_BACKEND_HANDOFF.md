@@ -24,8 +24,8 @@ IntelliOps manages operational payment exceptions end-to-end:
 
 ### Roles
 
-- **Analyst:** reviews exception/investigation; creates and reassesses plans; records simulated communication; requests policy assessment; submits eligible plans; reads approval history. Cannot approve financial-impacting proposals.
-- **Administrator:** reviews, approves or rejects submitted proposals with a recorded reason. May perform a distinct, separately authorized controlled remediation operation only if one is explicitly implemented and verified.
+- **Analyst:** runs the operational workflow; reviews exception/investigation evidence; creates and reassesses plans; sends and synchronizes customer communication; requests policy assessment; submits eligible plans; performs controlled remediation; and reads approval history. Cannot approve financial-impacting proposals.
+- **Administrator:** reviews, approves or rejects submitted proposals with a recorded reason. No other operational mutation is assigned to this role.
 - **AI/service actors:** produce analysis or policy outputs, but are **not human approvers**.
 
 The current frontend may have a **walkthrough role selector**. It is a presentation aid, **not secure authorization**. Backend endpoints must enforce actual roles using the server's configured authentication model.

@@ -5,7 +5,7 @@ import { processDuplicateRun, duplicateScenarios } from './duplicateScenarios.js
 import { detectPayments } from './paymentSimulation.js';
 
 const input = { senderId: 'ACC-100003', receiverId: 'ACC-100001', amount: '123.45', runKey: 'local-run-0001' };
-const options = { role: 'ADMIN', now: '2026-11-03T03:00:00Z' };
+const options = { role: 'ANALYST', now: '2026-11-03T03:00:00Z' };
 
 for (const [index, variant] of duplicateScenarios.entries()) {
   test(`${variant.code}: actual journals, balances, origins, replay and candidate pair`, () => {
@@ -42,6 +42,6 @@ test('local validation is atomic, checks aggregate funds, and allows a hold afte
   const remaining = (balanceFor(state, sender).current / 100).toFixed(2);
   assert.equal(processDuplicateRun(state, { ...input, amount: remaining, duplicateScenario: duplicateScenarios[0].code }, options).payment.postingCount, 1);
   assert.throws(() => processDuplicateRun(state, { ...input, amount: remaining, duplicateScenario: duplicateScenarios[1].code }, options), /funds/);
-  assert.throws(() => processDuplicateRun(state, { ...input, duplicateScenario: duplicateScenarios[0].code }, { ...options, role: 'ANALYST' }), /ADMIN/);
+  assert.throws(() => processDuplicateRun(state, { ...input, duplicateScenario: duplicateScenarios[0].code }, { ...options, role: 'ADMIN' }), /ANALYST/);
   assert.throws(() => processDuplicateRun(state, { ...input, receiverId: 'ACC-100005', duplicateScenario: duplicateScenarios[0].code }, options), /Active/);
 });

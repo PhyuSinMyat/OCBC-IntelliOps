@@ -19,6 +19,7 @@ class PaymentTests(unittest.TestCase):
 
     def setUp(self):
         self.setUpDatabase()
+        app.dependency_overrides[actor] = lambda: "ANALYST"
         self.clock = patch.dict(os.environ, {"INTELLIOPS_SIMULATION_TIME": "2026-11-03T03:00:00+00:00"})
         self.clock.start()
 
@@ -161,7 +162,7 @@ class PaymentTests(unittest.TestCase):
         self.assertEqual(missing["journals"], [])
         self.assertEqual(len(missing["exceptions"]), 1)
 
-    def test_authentication_and_admin_injection_policy(self):
+    def test_authentication_and_analyst_injection_policy(self):
         app.dependency_overrides.pop(actor)
         with patch.dict(os.environ, {"INTELLIOPS_ADMIN_TOKEN": "test-admin-secret", "INTELLIOPS_ANALYST_TOKEN": "test-analyst-secret"}):
             self.assertEqual(self.client.get("/api/payments").status_code, 401)
@@ -169,9 +170,10 @@ class PaymentTests(unittest.TestCase):
             admin = {"Authorization": "Bearer test-admin-secret"}
             self.assertEqual(self.client.get("/api/payments", headers=analyst).status_code, 200)
             self.assertEqual(self.client.post("/api/payments", headers=analyst, json=self.request()).status_code, 201)
-            payload = {**self.request(idempotency_key="admin-fault-test"), "scenario_code": "MISSING_LEDGER"}
-            self.assertEqual(self.client.post("/api/demo/payments/scenario", headers=analyst, json=payload).status_code, 403)
-            self.assertEqual(self.client.post("/api/demo/payments/scenario", headers=admin, json=payload).status_code, 201)
+            payload = {**self.request(idempotency_key="analyst-fault-test"), "scenario_code": "MISSING_LEDGER"}
+            self.assertEqual(self.client.post("/api/demo/payments/scenario", headers=analyst, json=payload).status_code, 201)
+            self.assertEqual(self.client.post("/api/demo/payments/scenario", headers=admin,
+                json={**payload, "idempotency_key": "admin-fault-test"}).status_code, 403)
             self.assertEqual(self.client.get("/api/banking-snapshot").status_code, 401)
 
     def test_disabled_existing_detection_rule_is_respected(self):
@@ -266,7 +268,7 @@ class PaymentTests(unittest.TestCase):
         with Session(self.engine) as db:
             self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionResolution)), 3)
 
-    def test_admin_can_generate_selected_exception_batch_with_automatic_inputs(self):
+    def test_analyst_can_generate_selected_exception_batch_with_automatic_inputs(self):
         response = self.client.post("/api/demo/exception-batches", json={
             "exception_types": ["MISSING_LEDGER", "DUPLICATE", "PROCESSING_FAILURE"],
             "count_per_type": 2,

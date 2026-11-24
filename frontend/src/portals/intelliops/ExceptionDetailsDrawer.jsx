@@ -97,9 +97,9 @@ export default function ExceptionDetailsDrawer({
   const report = history?.rows.find(row => row.investigation_id && row.report);
   const status = canonicalCaseStatus(record?.status);
   const reviewable = backendConnected && ['OPEN', 'IN_PROGRESS'].includes(status);
-  const isAdmin = backendConnected && records.role === 'ADMIN';
+  const isAnalyst = backendConnected && records.role === 'ANALYST';
   const evidence = record?.evidence || {};
-  const action = isAdmin && reviewable && actions[record?.exceptionType];
+  const action = isAnalyst && reviewable && actions[record?.exceptionType];
   // The live endpoint revalidates all records. Suppress rejection when detection already
   // proves that both payments posted or explicitly rules out an original instruction link.
   const canRemediate = action && !(record.exceptionType === 'Duplicate Transaction' &&

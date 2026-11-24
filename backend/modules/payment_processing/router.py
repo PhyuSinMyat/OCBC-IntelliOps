@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from shared.security import actor
+from shared.security import actor, analyst
 from sqlalchemy import select
 from shared.database import SessionLocal
 from .models import Transaction
@@ -9,7 +9,7 @@ router = APIRouter(tags=["Payment Processing"], dependencies=[Depends(actor)])
 
 
 @router.post("/demo/transactions")
-def create_demo_transaction(role=Depends(actor)):
+def create_demo_transaction(role=Depends(analyst)):
     from decimal import Decimal
 
     with SessionLocal.begin() as db:

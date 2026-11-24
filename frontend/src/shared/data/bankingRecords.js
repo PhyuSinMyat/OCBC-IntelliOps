@@ -185,7 +185,7 @@ export async function closeException(caseId, note) {
   return result;
 }
 export function advanceSimulationClock(role) {
-  if (backendConnected || role !== 'ADMIN') throw new Error('Clock advance is available only to the local ADMIN demo role.');
+  if (backendConnected || role !== 'ANALYST') throw new Error('Clock advance is available only to the local ANALYST demo role.');
   const now = new Date(Date.parse(getSimulationNow()) + 61000).toISOString();
   save({ ...state, simulationNow: now, audit_events: [...(state.audit_events || []), { id: `AUD-CLOCK-${(state.audit_events || []).length}`, action: 'SIMULATION_CLOCK_ADVANCED', actor: role, reference: 'LOCAL_CLOCK', details: { seconds: 61 }, createdAt: now }] });
 }

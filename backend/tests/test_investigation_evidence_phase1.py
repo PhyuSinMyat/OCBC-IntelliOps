@@ -47,7 +47,7 @@ class EvidencePhase1Tests(unittest.TestCase):
         with Session(self.engine) as db, db.begin():
             request = ScenarioRequest(sender_account_ref='ACC-100003', receiver_account_ref='ACC-100001', amount=amount,
                 currency='SGD', idempotency_key=key, scenario_code='DUPLICATE', duplicate_scenario=variant, run_key=key)
-            batch = generate_duplicate(db, request, 'ADMIN')
+            batch = generate_duplicate(db, request, 'ANALYST')
             txs = db.scalars(select(Transaction).join(ExceptionBatchItem, ExceptionBatchItem.transaction_id == Transaction.id)
                 .where(ExceptionBatchItem.batch_id == batch.batch_id).order_by(ExceptionBatchItem.sequence)).all()
             case = ExceptionCase(transaction_id=txs[1].id, related_transaction_id=txs[0].id,

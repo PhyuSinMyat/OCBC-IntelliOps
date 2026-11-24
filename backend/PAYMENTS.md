@@ -47,13 +47,13 @@ can advance the simulated clock by 61 seconds without changing source timestamps
 | POST /api/payments | normal validated payment; ANALYST or ADMIN |
 | GET /api/payments/{id}/events | actual recorded chronological processing events |
 | GET /api/payments/{id}/related | actual journals, totals and exception relationships |
-| POST /api/demo/payments/scenario | controlled fault injection; ADMIN only |
-| POST /api/demo/exception-batches | ADMIN-only automatic generation for selected exception types |
+| POST /api/demo/payments/scenario | controlled fault injection; ANALYST only |
+| POST /api/demo/exception-batches | ANALYST-only automatic generation for selected exception types |
 | POST /api/detection/run | explicit independent source-evidence detection |
 | GET /api/exceptions | detected cases and evidence |
 | GET /api/exceptions/{case} | case detail, remediation link and immutable timeline |
 | POST /api/exceptions/{case}/notes | add a note and move the case to IN_REVIEW |
-| POST /api/exceptions/{case}/remediate | ADMIN-only idempotent resolution selected by exception policy |
+| POST /api/exceptions/{case}/remediate | ANALYST-only idempotent resolution selected by exception policy |
 | POST /api/exceptions/{case}/close | close a resolved case after checks |
 | GET /api/audit-events | recent recorded actions |
 | GET /api/banking-snapshot | consistent shared UI record set and server balance summaries |
@@ -137,7 +137,7 @@ unavailable until explicitly mapped.
 
 Open Payment Processing / Transactions. Create a normal payment and inspect
 Overview, Processing History and Related Records. In local mode select the
-explicit ADMIN demo role for fault scenarios. Create a scenario, advance the
+explicit ANALYST demo role for fault scenarios. Create a scenario, advance the
 local clock when required (or wait for backend cutoff), run detection, and open
 the actual case from Related Records. The case links to evidence review and
 source records. Audit Trail records creation, injection and detection actions.

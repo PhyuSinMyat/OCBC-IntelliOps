@@ -52,6 +52,18 @@ Loading or connection errors are shown explicitly; local data is not substituted
 The shared snapshot refreshes after payment creation or detection. The legacy ledger transfer form remains local-only; use Create Synthetic Payment for controlled backend posting. The local transfer form
 continues to work in the default simulation mode and never writes to a database.
 
+Connected mode now opens a two-profile sign-in page. Select Analyst or
+Administrator and enter the corresponding backend value configured as
+`INTELLIOPS_ANALYST_TOKEN` or `INTELLIOPS_ADMIN_TOKEN`. The selected profile is
+only an expected-role check: FastAPI derives the actual role from the credential,
+and a credential for the other role is rejected by the login flow. Use the account
+menu to sign out and switch roles. Analysts can inspect the complete Approval
+Center queue and request context, but the Administrator decision panel is not
+rendered for them. Administrators are restricted to the Approval Center route and
+see the same submitted context plus the decision controls; direct navigation to
+other portal pages redirects them back to approvals. The backend independently
+rejects non-Administrator decisions.
+
 Tests:
 
 ```powershell

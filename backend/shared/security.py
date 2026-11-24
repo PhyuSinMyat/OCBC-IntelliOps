@@ -20,3 +20,9 @@ def administrator(role=Depends(actor)):
     if role != "ADMIN":
         raise HTTPException(403, "Only ADMIN may perform this operation.")
     return role
+
+
+def analyst(role=Depends(actor)):
+    if role != "ANALYST":
+        raise HTTPException(403, "Only ANALYST may perform this operation.")
+    return role

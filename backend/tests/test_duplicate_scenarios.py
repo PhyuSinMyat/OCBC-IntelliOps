@@ -112,8 +112,8 @@ class DuplicateScenarioTests(unittest.TestCase):
             self.assertEqual(db.scalar(select(func.count()).select_from(ExceptionBatch)), 0)
         self.assertEqual(self.generate().status_code, 201)
         self.assertEqual(self.generate(amount='124.00').status_code, 409)
-        app.dependency_overrides[actor] = lambda: 'ANALYST'
-        self.assertEqual(self.generate(run_key='analyst-run-0001').status_code, 403)
+        app.dependency_overrides[actor] = lambda: 'ADMIN'
+        self.assertEqual(self.generate(run_key='admin-run-0001').status_code, 403)
 
     def test_held_only_needs_one_transfer_and_validator_refuses_posting(self):
         from modules.core_banking.service import post_normal_journal
@@ -197,7 +197,7 @@ class MigrationCompatibilityTests(unittest.TestCase):
         def database():
             with Session(engine) as db: yield db
         app.dependency_overrides[get_db] = database
-        app.dependency_overrides[actor] = lambda: 'ADMIN'
+        app.dependency_overrides[actor] = lambda: 'ANALYST'
         with TestClient(app) as client:
             response = client.get('/api/banking-snapshot')
             self.assertEqual(response.status_code, 200, response.text)

@@ -87,9 +87,9 @@ class ExceptionScenarioTests(unittest.TestCase):
         self.assertEqual(self.generate('PROCESSING_FAILURE', 'POSTING_EVENT_LOST').status_code, 422)
         self.assertEqual(self.generate('PROCESSING_FAILURE', 'PROCESSOR_UNAVAILABLE').status_code, 201)
         self.assertEqual(self.generate('PROCESSING_FAILURE', 'PROCESSOR_UNAVAILABLE', amount='101.00').status_code, 409)
-        app.dependency_overrides[actor] = lambda: 'ANALYST'
-        self.assertEqual(self.generate('MISSING_LEDGER', 'POSTING_EVENT_LOST', 1).status_code, 403)
         app.dependency_overrides[actor] = lambda: 'ADMIN'
+        self.assertEqual(self.generate('MISSING_LEDGER', 'POSTING_EVENT_LOST', 1).status_code, 403)
+        app.dependency_overrides[actor] = lambda: 'ANALYST'
         before = self.balance()
         with Session(self.engine) as db:
             requests_before = db.scalar(select(func.count()).select_from(PaymentRequestHistory))

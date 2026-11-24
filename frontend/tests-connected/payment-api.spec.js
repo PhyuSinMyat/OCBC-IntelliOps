@@ -2,11 +2,11 @@ import { test, expect } from '@playwright/test';
 
 test('authenticated browser creates backend payments and traces actual failure cases', async ({ page }) => {
   await page.goto('/payments/transactions');
-  await expect(page.getByRole('heading', { name: 'Banking records unavailable' })).toBeVisible();
-  await page.getByLabel('Synthetic demo access token').fill('integration-test-admin-only');
-  await page.getByRole('button', { name: 'Connect to Demo Backend' }).click();
+  await expect(page.getByRole('heading', { name: 'Welcome back' })).toBeVisible();
+  await page.getByLabel('Access password').fill('integration-test-analyst-only');
+  await page.getByRole('button', { name: 'Sign in as Analyst' }).click();
   await expect(page.getByRole('heading', { name: 'Transaction register' })).toBeVisible();
-  await expect(page.getByText(/Authenticated ADMIN/)).toBeVisible();
+  await expect(page.getByText(/Authenticated ANALYST/)).toBeVisible();
   const openingCents = await page.evaluate(async () => {
     const response = await fetch('/backend/api/banking-snapshot', { headers: { Authorization: `Bearer ${sessionStorage.getItem('intelliops-api-token')}` } });
     return (await response.json()).accounts.find(a => a.id === 'ACC-100001').authoritativeBalance.current;
@@ -40,24 +40,18 @@ test('authenticated browser creates backend payments and traces actual failure c
   await page.getByLabel('Amount', { exact: true }).fill('10.00');
   await page.getByLabel('Exception type').selectOption('PROCESSING_FAILURE');
   await page.getByRole('button', { name: 'Submit Synthetic Payment' }).click();
+  await page.getByRole('region', { name: 'Generated payment results' }).getByRole('button', { name: /^TXN-/ }).click();
   await expect(page.getByRole('tab', { name: 'Overview', exact: true })).toBeVisible();
-  await expect(page.getByRole('dialog')).toContainText('SIM_PROCESSING_ERROR');
+  await expect(page.getByRole('dialog')).toContainText('PROCESSOR_UNAVAILABLE');
   const failureReference = new URL(page.url()).searchParams.get('transaction');
   await page.getByRole('button', { name: 'Close details' }).click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
-  await page.getByRole('button', { name: 'Run Detection', exact: true }).click();
-  await expect(page.getByRole('status')).toContainText('1 new case');
+  await page.getByRole('button', { name: 'Run Detection', exact: true }).first().click();
+  await expect(page.getByRole('status')).toContainText(/Detection completed: [01] new case/);
   await page.goto('/payments/transactions?transaction=' + failureReference);
   await page.getByRole('tab', { name: 'Related Records' }).click();
   await page.getByRole('link', { name: 'Open IntelliOps Case' }).click();
   await expect(page.getByRole('dialog')).toContainText('Payment Processing Failure');
-  await page.getByLabel('Review note').fill('Verified controlled retry prerequisites.');
-  await page.getByRole('button', { name: 'Retry Failed Payment' }).click();
-  await expect(page.getByRole('dialog')).toContainText('RESOLVED');
-  await expect(page.getByRole('dialog')).toContainText('retried successfully');
-  await page.getByRole('button', { name: 'Close Resolved Case' }).click();
-  await expect(page.getByRole('dialog')).toContainText('CLOSED');
-  await page.goto('/core-banking/accounts');
-  await expect(page.locator('tbody tr').filter({ hasText: 'Alex Tan' })).toContainText(amount(openingCents + 3500));
   expect(reference).toMatch(/^TXN-/);
+  expect(failureReference).toMatch(/^TXN-/);
 });

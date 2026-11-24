@@ -52,6 +52,7 @@
 .ac-facts dd { margin: 4px 0 0; font-size: 14px; font-weight: 700; }
 .ac-financial { padding: 10px 12px; border: 1px solid #dce8f3; border-radius: 7px; background: #f6f9fd; }
 .ac-overview { border-top: 3px solid #51748f; }
+.ac-overview > .ac-facts { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .ac-financial { margin-top: 12px; }
 .ac-workspace .ac-financial > p { color: #405d78; font-size: 13px; font-weight: 700; }
 .ac-financial .ac-facts { margin-top: 6px; }
@@ -62,6 +63,7 @@
 .ac-references { margin-top: 9px; padding-top: 8px; border-top: 1px solid var(--ac-border); }
 .ac-workspace summary { color: #244e75; font-size: 13px; font-weight: 700; cursor: pointer; }
 .ac-review-grid { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+.ac-review-grid-readonly { grid-template-columns: minmax(0, 1fr); }
 .ac-review-grid h2 + h3, .ac-review-grid h2 + p { margin-top: 8px; }
 .ac-context-panel > section + section { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--ac-border); }
 .ac-workspace .ac-policy-result { margin-top: 10px; }
@@ -99,6 +101,8 @@
 .ac-receipt-next > p + p { margin-top: 4px; }
 .ac-workspace .ac-reject { color: #8d3043; border-color: #dfc2cb; }
 .ac-workspace .ac-reject:hover { background: #fff2f5; }
+.ac-workspace .ac-approve { border-color: #245969; background: #245969; color: #fff; }
+.ac-workspace .ac-approve:hover { background: #194a59; }
 .ac-dialog { width: min(510px, calc(100% - 24px)); max-height: calc(100% - 24px); padding: 20px; border: 1px solid var(--ac-border); border-radius: 11px; background: #fff; color: var(--rp-ink); }
 .ac-dialog::backdrop { background: #13263c9c; }
 .ac-dialog form { display: grid; gap: 8px; }
@@ -117,5 +121,6 @@
   .ac-table td::before { content: attr(data-label) / ''; display: block; margin-bottom: 3px; color: #506783; font-size: 12px; font-weight: 700; }
 }
 @media (max-width: 780px) { .ac-review-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 780px) { .ac-overview > .ac-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (min-width: 1024px) { .ac-decision { position: sticky; top: calc(var(--header-height, 72px) + 12px); } }
 @media (max-width: 520px) { .ac-kpis { gap: 6px; } .ac-kpi { flex-wrap: wrap; gap: 5px; padding: 8px; } .ac-kpi-icon { width: 30px; height: 30px; } }

@@ -1,155 +1,219 @@
-# IntelliOps backend
+# IntelliOps — AI-Powered Banking Exception Management
 
-From the repository root, activate the project virtual environment and install
-`backend/requirements.txt` (or `backend/requirements-dev.txt` for tests).
-Set `DATABASE_URL` to a synthetic PostgreSQL development database in `backend/.env`.
+**Team:** CoreVista  
+**Event:** OCBC Innovation Challenge, November 2026  
+**Status:** Completed hackathon prototype  
+**Environment:** Synthetic banking data; not connected to live banking systems
 
-### Automatic exception detection
+> IntelliOps is a student-built proof of concept, not an official OCBC product. Customer identities, payments, accounts, and ledger records in the banking simulation are fictional. Real email delivery, where configured, is for controlled demonstrations and does not imply a live banking integration.
 
-Payment creation, scenario simulation and exception batches invoke a scoped scan after the payment transaction commits. The scan uses its own database session and the same rules as `POST /api/detection/run` (Scan Now). PostgreSQL uses a 1.5-second lock timeout and a 4-second per-statement timeout for automatic scans. Failures are recorded in the audit log when available and leave the committed financial result intact. Set `INTELLIOPS_AUTOMATIC_DETECTION=false` to disable automation while retaining manual scans.
+## Overview
 
-The existing case `created_at` is the first detection time. The existing detector lock, active-case uniqueness, stable transaction and rule identity, and ordered duplicate-pair identity apply to both paths. Existing resolved cases follow the detector's current recurrence rules.
+IntelliOps helps an operations analyst move from **detecting a payment exception** to **understanding its cause, proposing a response, checking policy, obtaining a human decision, and recording the audit history**. The AI explains evidence and proposes actions; deterministic checks and authorized people control decisions. It is **AI-assisted**, not an autonomous financial-remediation agent.
 
-Run `python backend/run_overdue_detection.py --watch` as one separately supervised process to check overdue missing-ledger postings every 20 seconds. Each pass first filters for completed payments without a matched modern or legacy posting and considers at most 50 due payments. The process skips when another detector holds the advisory lock. FastAPI does not start the worker. Run the same command without `--watch` for one check. Both forms can create cases in the configured database, so use an isolated database for verification. The scheduled pass targets overdue observations and leaves recovery checks for the full manual scan.
+We built two supporting portals to make the demonstration verifiable:
 
-`GET /api/detection/status` requires the existing demo authentication. It reports post-commit availability and the last recorded success or failure. It does not report scheduler uptime.
+| Portal | Purpose |
+| --- | --- |
+| **IntelliOps** | Exception Center, AI Investigation, Resolution Workspace, Approval Center, Audit Trail |
+| **Payment Processing** | Create synthetic transfers; inspect transactions, attempts, statuses and processing events |
+| **Core Banking / Ledger** | Inspect fictional accounts, balances, journals and debit/credit entries |
 
-### Initial exception severity
+These portals refer to connected synthetic payment and ledger records, allowing a reviewer to trace a case back to its source.
 
-New cases store a rule-based severity assessment in their existing evidence and detection audit records. The detection-rule severity field remains available as legacy configuration metadata. Case creation uses the evidence assessment for the assigned severity.
+## What we built
 
-Critical severity applies to recent confirmed defects of the same type across distinct transactions and known sender-account owners. Eligible cohorts cover missing postings after cutoff, exact amount mismatches and posted currency or account discrepancies. An isolated or historical issue does not qualify. The default cohort requires 10 transactions and 3 distinct customers over 900 seconds, with a transaction in the last 300 seconds and at least 60 seconds between the earliest and latest transaction.
+1. **Automated exception detection:** Rule-based checks classify five categories, with case deduplication, severity/status rules, detected-at timestamps, a manual **Scan Now** control, and detection following synthetic payment activity.
+2. **Exception Center:** Search, filters, pagination, status/severity indicators, transaction references, and a case-details drawer showing financial and technical evidence.
+3. **AI Investigation:** FastAPI retrieves read-only source evidence, builds an allowlisted LLM input, calls OpenAI Responses, validates the returned report, and stores accepted investigations for authenticated history retrieval.
+4. **AI Resolution Plans:** AI-assisted next-step recommendations tied to a saved investigation. Reassessment can produce **Version 2** using newly received customer context, while retaining **Version 1** for comparison.
+5. **Customer Communication:** Incident notification, customer reply tracking, chronological conversation, and plan-staleness awareness when a new customer response arrives. The final demo used a controlled real-email/Gmail communication path; this is not a banking customer-messaging integration.
+6. **Deterministic Policy Assessment:** Six explicit checks decide whether a proposal is sufficiently supported and whether human approval is required. A model cannot override policy.
+7. **Approval Center:** Administrator review and approve/reject decisions. Approval means **Approved — Awaiting Action**, not that money was reversed or a case resolved.
+8. **Audit Trail:** Case-linked records of important operational, investigation, communication, policy and approval events.
 
-Override the thresholds with `INTELLIOPS_SEVERITY_MIN_TRANSACTIONS`, `INTELLIOPS_SEVERITY_MIN_CUSTOMERS`, `INTELLIOPS_SEVERITY_WINDOW_SECONDS` or `INTELLIOPS_SEVERITY_RECENT_SECONDS`. Count thresholds have a minimum of 2, the full window has a minimum of 120 seconds, and the recent window is limited to the full window. Invalid integer values fall back to defaults.
+**Important boundary:** The completed demo stops at the approval/decision and audit stages. It does **not** automatically reverse a payment, correct the ledger, verify a financial correction, or claim the exception is closed after approval.
 
-To review a one-time severity recalculation, run `python backend/recalculate_exception_severity.py` from the repository root with the backend dependencies installed. The default command opens a read-only PostgreSQL transaction and reports the configured target fingerprint, proposed distribution, and plan fingerprint. A recognized case with inconclusive current evidence receives Medium. Unsupported case types or missing primary payments block the update.
+## End-to-end flow
 
-After verifying the target and plan, run the same command with `--apply --confirm-target TARGET --confirm-plan PLAN --backup PATH`. Use a new backup path outside version control. The command rechecks the plan, backs up the case IDs and severities, updates only the current severity, and appends existing audit records for changed cases. Protected accounting, exception and investigation records are checked before commit. A changed plan or unavailable schema prevents the write.
-
-### Case status reconciliation
-
-Run `python backend/reconcile_case_statuses.py` for the read-only preview. After verifying the target and plan, supply `--apply --confirm-target TARGET --confirm-plan PLAN --backup PATH` to update cases and append audit entries in a single transaction. Existing durable investigation records and review notes support In Progress. Terminal cases and existing statuses without enough evidence are preserved. See [the approval persistence proposal](../docs/case-approval-persistence-proposal.md) for the remaining workflow stages.
-Then run from `backend/`:
-
-```powershell
-alembic upgrade head
-python -m modules.core_banking.seed
-uvicorn main:app --reload
+```mermaid
+flowchart TD
+    A["Synthetic payment and ledger activity"] --> B["Rule-based exception detection"]
+    B --> C["Exception Center"]
+    C --> D["AI Investigation: evidence and root-cause hypothesis"]
+    D --> E["AI Resolution Plan V1"]
+    E --> F["Customer notification and optional response"]
+    F --> G{"New relevant context?"}
+    G -->|Yes| H["AI reassessment: preserve V1, create V2"]
+    G -->|No| I["Select current plan"]
+    H --> I
+    I --> J["Deterministic Policy Assessment"]
+    J --> K{"Eligible and reviewable?"}
+    K -->|No| L["Block or request revision"]
+    K -->|Yes, approval needed| M["Administrator approval or rejection"]
+    M --> N["Audit decision and next-step status"]
+    L --> N
 ```
 
-The seed preserves all eight public account references, opening balances and the
-two original frontend transfers. It is explicit, idempotent and refuses conflicts.
-The original `python generate_data.py` scenario generator remains available for
-a fresh legacy transaction dataset; it is independent of the account seed and
-does not infer accounting postings for existing exceptions.
+### Plan versioning and customer context
 
-`modules/core_banking/MIGRATION_REPORT.md` documents the explicit customer map,
-Corporate-to-Current label changes, new UUID identifiers and preserved legacy
-relationships. No existing ledger_records are converted into invented journals.
+- Plan V1 is based on the saved investigation and evidence available when it was generated.
+- Customer replies are recorded as **additional input**, not as proof that the financial records changed.
+- A new reply may make V1 stale. The analyst can generate V2; the older plan remains visible.
+- Policy assessment must evaluate the **selected latest non-stale plan**. It must never imply a response was already considered by an earlier model call.
+- Customer communication is contextual: not every operational exception requires a customer response.
 
-The account read APIs support:
+## Six deterministic policies
 
-- `GET /api/accounts`: search, customer_type, account_type, currency, status, sort,
-  page and page_size. Sort values match the frontend: reference, customer-asc,
-  customer-desc, balance-asc, balance-desc, created-asc and created-desc.
-- `GET /api/accounts/{account_id}`: UUID lookup with customer and balance summary.
-- `GET /api/accounts/{account_id}/ledger-entries`: valid posted account movements.
-- `GET /api/customers`: explicitly classified fictional customers.
-- `GET /api/banking-snapshot`: shared source records for frontend connected mode.
+| ID | Rule |
+| --- | --- |
+| **POL-001 — Current Resolution Plan** | Only the latest, non-stale plan can proceed. |
+| **POL-002 — Verified Investigation** | An accepted investigation must support the plan. |
+| **POL-003 — Financial Evidence** | Financial-correction review requires sufficiently verified and current financial evidence. |
+| **POL-004 — Action Eligibility** | The action must be supported and consistent with verified facts. |
+| **POL-005 — Approval Authority** | Financially sensitive correction proposals require Administrator approval. |
+| **POL-006 — Customer Communication** | Required communication and relevant responses must be considered; an optional unanswered message must not unnecessarily block review. |
 
-Balance summaries use SQL aggregation across entire valid posted journals,
-requiring at least two positive same-currency posted entries and equal debit and
-credit totals. Reversed journals retain the existing exclusion semantics; no
-compensating reversal entries are generated. Payment amount mismatches, unmatched
-payment references and missing ledger postings are not repaired. Balance sorting
-compares nominal amounts in the selected currencies; filter by currency to compare
-like amounts. Account list queries do not issue per-account database queries.
+The AI may recommend an action, but **it cannot approve itself or execute financial corrections**. Policy checks use backend-controlled evidence and rules, not the LLM's confidence alone.
 
-No account creation/editing endpoints existed, so none are added. Database
-constraints enforce customer/product combinations for all future write paths;
-`validate_ownership` provides clear service validation errors. Payment operations
-now use configured synthetic-demo bearer credentials for ANALYST and ADMIN.
-Set distinct `INTELLIOPS_ANALYST_TOKEN` and `INTELLIOPS_ADMIN_TOKEN` values in the
-backend environment. Account, payment and snapshot reads require a valid token;
-normal payment creation permits both roles, and scenario injection requires ADMIN.
-The public root and health endpoints remain available. This is demo authentication,
-not production identity management. No approval permissions are granted to ANALYST.
+## Supported exception categories
 
-Payment APIs and the end-to-end demonstration are documented in
-[PAYMENTS.md](PAYMENTS.md). The new migration extends the original transaction and
-event tables through normalized payment instructions, preserving integer IDs and
-legacy exception FKs. All writes occur through the controlled payment service.
+| Category | Example evidence or issue |
+| --- | --- |
+| **Duplicate Transaction** | Similar requests or repeated execution; a flagged pair is not automatically a confirmed duplicate. |
+| **Amount Mismatch** | Payment amount differs from posted ledger amount, including fee/partial/scaling errors. |
+| **Missing Ledger Posting** | Payment marked completed but a corresponding committed journal is absent. |
+| **Payment Processing Failure** | Processor unavailable, clearing rejection or account restriction during processing. |
+| **Unmatched Transaction** | Payment and ledger references do not reconcile despite potentially valid entries. |
 
-Run automated database, migration, financial consistency and API tests:
+Severity is classified from currently available evidence: **Critical** for widespread/ongoing severe impact; **High** for confirmed or credible financial discrepancy; **Medium** for suspicious/unresolved issues without established loss; **Low** for safely contained or verified harmless cases. Detection does not secretly receive the simulated scenario's expected diagnosis.
 
-```powershell
-python -m unittest discover -s tests -v
+### Three duplicate-transaction cases used to validate AI Investigation
+
+| Case | What the *source evidence* showed | Accepted investigation direction | Human-review action |
+| --- | --- | --- | --- |
+| `CASE-000010` (A) | Customer repeat held, one SGD 25 posting | Genuine held repeat; no double posting | `CLOSE_HELD_DUPLICATE` |
+| `CASE-000011` (B) | ACK timeout, system retry, idempotency lookup miss despite prior execution; two SGD 10 postings | System-induced duplicate execution | `ESCALATE_DUPLICATE_FINANCIAL_EXECUTION` |
+| `CASE-000009` (C) | Separate authorizations, two SGD 3.33 postings | Legitimate separate instructions | `REVIEW_FALSE_POSITIVE_CLOSURE` |
+
+These accepted reports were obtained through controlled real-model tests and saved for history retrieval. They demonstrate those specific cases, **not guaranteed correctness on all future cases**. Cases require analyst review; no accepted report authorizes a ledger mutation.
+
+## How AI evidence is kept separate from scenario answers
+
+The simulator creates operational events, but the LLM is **not** sent the generator's selected scenario, expected root cause, expected action, or legacy heuristic verdict.
+
+1. The investigator reads a **repeatable-read, read-only** database snapshot and releases the transaction before contacting the model.
+2. A separate projection transmits exactly four top-level sections: `snapshot`, `financial_verification`, `evidence_references`, and `retrieved_at`.
+3. The snapshot includes relevant payment/request relationships, timestamps, processing events, journal references, and entries—not private scenario labels or expected answers.
+4. The model returns structured root-cause hypotheses, explanations, citations and a proposed review action.
+5. Server-side validation checks citation IDs, supported money amounts and chronology, financial consistency, diagnosis/action compatibility, and uncertainty safeguards. Invalid output is rejected rather than silently repaired.
+
+Stable citation identifiers let analysts check the source material. A valid citation ID alone does not prove the model's sentence is true; this is why human review remains essential.
+
+## Technical architecture
+
+```mermaid
+flowchart TB
+    UI["React + Vite: three portals"] --> API["FastAPI: authenticated REST endpoints"]
+    API --> DET["Detection and case services"]
+    API --> INV["Investigation and resolution services"]
+    API --> GOV["Policy, approvals, audit and communications"]
+    DET --> DB[("PostgreSQL: synthetic payments, journals, cases, history")]
+    INV --> DB
+    GOV --> DB
+    INV --> LLM["OpenAI Responses API: analysis and recommendations"]
+    GOV --> EMAIL["Configured demo email delivery / reply handling"]
 ```
 
-Tests use isolated SQLite databases with foreign keys enabled. They never touch
-your configured PostgreSQL data. PostgreSQL deployment validation should be run
-against a dedicated development database before using the migration there.
+| Layer | Technology |
+| --- | --- |
+| Frontend | React, JavaScript/JSX, Vite, React Router |
+| Backend | Python, FastAPI, SQLAlchemy, Pydantic |
+| Persistence | PostgreSQL; SQL migrations/Alembic-managed schema history where applicable |
+| Generative AI | OpenAI Responses API; structured outputs and application validation |
+| Deterministic controls | Python detection, accounting checks, policy and role authorization |
+| Testing | Python `unittest`, frontend tests/build, Playwright browser checks |
 
-## Persistent resolution workflow
+This is a modular backend and frontend application, **not a LangGraph-powered autonomous agent system**. Do not describe it as automatically performing corrective financial transactions.
 
-Migration `20261119_09` adds immutable, append-only `resolution_plans`,
-`customer_communications`, and `policy_assessments` tables. The application never
-applies this migration at startup. Review it and run `alembic upgrade head` only
-against an explicitly approved target database.
+## Roles, statuses and action boundaries
 
-Authenticated endpoints:
+- **Analyst:** Inspect exceptions, request investigation or resolution recommendations, manage communication, assess plans and submit proposals for approval.
+- **Administrator:** Review, approve or reject sensitive proposals within the configured authorization workflow.
 
-- `GET/POST /api/exceptions/{case_id}/resolution-plans`
-- `GET/POST /api/exceptions/{case_id}/communications`
-- `GET/POST /api/exceptions/{case_id}/policy-assessments`
+Exception Center operational statuses used in the prototype:
 
-Plan generation is an explicit paid OpenAI request. The model receives a bounded,
-server-built projection of the accepted investigation, verified accounting facts,
-allowlisted evidence references, and recorded customer context. Strict structured
-output is required. The backend independently fixes the eligible action code,
-validates citations and unsafe completion claims, and keeps approval and financial
-authority out of the model. Set `INTELLIOPS_RESOLUTION_MODEL` to use a different
-model from `OPENAI_MODEL`; otherwise the investigation model is reused.
+`OPEN` → `IN PROGRESS` → `PENDING APPROVAL` → `APPROVED — AWAITING ACTION`
 
-Every version is immutable and captures the accepted investigation fingerprint
-plus the current persisted customer-context revision. New communications append
-records; they cannot be cleared from the UI. Policy assessment remains entirely
-deterministic: it evaluates six server controls and appends a historical result.
-These endpoints never post, reverse, refund, close, or otherwise mutate payment
-and ledger records. Tests use mocked provider transports and never make paid calls.
+A rejected submission is represented as `REJECTED — NEEDS REVISION`. **Approved** is not equivalent to **Executed**, **Resolved**, or **Closed**.
 
-## Outbound customer email
+## Run locally
 
-Migration `20261119_10` removes the simulation-only communication constraint and
-adds a durable `email_deliveries` outbox. Apply it through the normal reviewed
-Alembic deployment; the application does not migrate the database at startup.
+The repo has two application directories, `backend/` and `frontend/`. Use the committed environment templates and module-specific READMEs as the definitive configuration references; values vary by team machine/database.
 
-Real email is ADMIN-only and remains disabled unless `INTELLIOPS_EMAIL_ENABLED`
-is true. Configure the SMTP and sender variables documented in `.env.example`.
-`STARTTLS` is the default transport security. `INTELLIOPS_EMAIL_ALLOWED_DOMAINS`
-can restrict recipients during development or staged rollout.
+**Prerequisites:** Python environment with backend requirements installed, Node.js/npm, access to the configured synthetic PostgreSQL dataset, and authorized demo credentials. An OpenAI key is only needed to **run new paid model calls**, not to view stored reports.
 
-The backend commits the communication and pending delivery before contacting the
-SMTP server. Known failures may be retried explicitly from the timeline. A
-delivery left in `SENDING`/`UNKNOWN` is not automatically retried because SMTP
-cannot guarantee idempotency after an interrupted connection. The stable
-Message-ID is retained for provider-side duplicate detection and audit review.
+From the repository root, in separate PowerShell terminals:
 
-## Inbound Gmail replies
+```powershell
+# Backend
+Set-Location backend
+python -m uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
 
-Migration `20261120_11` adds durable, idempotent receipt records for customer
-email replies. Review the migration and apply it through the normal Alembic
-deployment before enabling inbox synchronization; startup never runs migrations.
+```powershell
+# Frontend
+Set-Location frontend
+npm.cmd install
+npm.cmd run dev -- --host 127.0.0.1 --port 5173
+```
 
-Set `INTELLIOPS_INBOUND_EMAIL_ENABLED=true` and configure the IMAP variables in
-`.env.example`. For Gmail, enable IMAP access and use a Google App Password with
-`imap.gmail.com:993`; the IMAP username and password may be omitted when they are
-the same as the configured SMTP credentials.
+Open **http://localhost:5173**, sign in using the team-provided demo role credentials, and use the portal switcher. If your Python environment is in a different location, adjust the Python invocation accordingly.
 
-An ADMIN can explicitly check for replies from the communication timeline. The
-backend opens the mailbox read-only, scans a bounded date/message window, and
-imports only plain-text messages that reference an exact outbound Message-ID and
-come from that email's recipient address. Imported provider Message-IDs and
-mailbox UIDs are unique, so repeated checks do not duplicate a reply. Attachments,
-HTML-only messages, unrelated mail, and mismatched senders are ignored. The old
-manual customer-response simulator is not exposed by either the API or UI.
+**Configuration cautions:**
+
+- Copy only safe names/placeholders from `backend/.env.example`; keep `.env`, tokens, OpenAI keys, email credentials and DB URLs out of Git.
+- Durable investigation history requires its approved SQL schema (`backend/sql/001_investigation_records.sql`) to exist before enabling `INTELLIOPS_INVESTIGATION_PERSISTENCE=true`. **Do not blindly rerun migration scripts or seed/import scripts against a populated shared database.**
+- Opening saved investigation history uses authenticated GETs and **does not call OpenAI**. An explicit **Start AI Investigation** or AI reassessment may make a paid request.
+- Real email functionality needs separate configured credentials/recipient controls. Only send to authorized test inboxes.
+- If the database is inaccessible, check the configured host, network restrictions and local connectivity before changing connection strings.
+
+### Useful verification commands
+
+```powershell
+# From backend/
+..\venv\Scripts\python.exe -B -m unittest discover -s tests -p 'test_investigation*.py' -q
+..\venv\Scripts\python.exe -B -m unittest discover -s tests -p 'test_payments.py' -q
+
+# From frontend/
+npm.cmd test
+npm.cmd run build
+```
+
+Opt-in live-source or deployed-browser tests may require explicit environment flags and credentials. Their absence should not be treated as test failure. Do not run paid evaluations or mutate a shared demo dataset merely to verify that the UI starts.
+
+## Demo walkthrough
+
+1. In **Payment Processing**, create a synthetic system-retry duplicate; inspect the original and repeated payment.
+2. In **Core Banking / Ledger**, show the two posted journals and their individual debit/credit entries.
+3. In **IntelliOps → Exception Center**, see the detected case and open its evidence/details.
+4. Open **AI Investigation** and review the supported cause, accounting facts and source citations.
+5. In **Resolution Plans**, generate/review V1, then open **Customer Communication** and send a controlled incident message.
+6. Record the customer's reply and return to the plan to **reassess**; V1 remains alongside V2.
+7. Review the latest plan under **Policy Assessment**, then submit a permitted proposal to **Approval Center**.
+8. As Administrator, approve or reject it; show **Audit Trail** and the resulting status. **No simulated or real money is automatically reversed.**
+
+## Security and limitations
+
+- Synthetic banking evidence; no live OCBC infrastructure, real customer balances or real payment execution.
+- Role-based backend checks for sensitive operations; separate Analyst and Administrator responsibilities.
+- Read-only investigation evidence gathering, factual LLM input allowlists and bounded model-output validation.
+- Preserved investigation history and plan-version context for review; stale context should trigger reassessment, not silent reuse.
+- Deterministic financial/policy decisions rather than allowing model text to execute commands, SQL, transfers or reversals.
+- Audit records provide traceability, but do not imply production-grade regulatory certification.
+- Narrative truth and unseen-scenario generalization are **not guaranteed** by passing schema/financial checks.
+- Financial correction and post-correction verification are **outside the completed hackathon flow** and require a separate controlled process.
+
+---
+
+**Project principle:** *Detect with rules. Investigate with evidence. Recommend with AI. Decide within policy. Keep humans accountable.*

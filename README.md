@@ -55,26 +55,33 @@ flowchart TD
     L --> N
 ```
 
-### Plan versioning and customer context
+### Backend-connected mode (target default)
 
-- Plan V1 is based on the saved investigation and evidence available when it was generated.
-- Customer replies are recorded as **additional input**, not as proof that the financial records changed.
-- A new reply may make V1 stale. The analyst can generate V2; the older plan remains visible.
-- Policy assessment must evaluate the **selected latest non-stale plan**. It must never imply a response was already considered by an earlier model call.
-- Customer communication is contextual: not every operational exception requires a customer response.
+- The React UI calls **FastAPI**; backend services own synthetic payment generation, journal validation, detection, and evidence retrieval.
+- **Supabase PostgreSQL** stores the fictional records. Financial balances are derived from appropriate posted ledger entries, not independently changed in the browser.
+- All portals should display the **same payment IDs, journal IDs, and case links** returned by the backend.
+- A failed backend call should show an error; it must **not silently fall back** to locally generated banking records.
 
-## Six deterministic policies
+### Browser-only mode (separate simulator)
 
-| ID | Rule |
-| --- | --- |
-| **POL-001 — Current Resolution Plan** | Only the latest, non-stale plan can proceed. |
-| **POL-002 — Verified Investigation** | An accepted investigation must support the plan. |
-| **POL-003 — Financial Evidence** | Financial-correction review requires sufficiently verified and current financial evidence. |
-| **POL-004 — Action Eligibility** | The action must be supported and consistent with verified facts. |
-| **POL-005 — Approval Authority** | Financially sensitive correction proposals require Administrator approval. |
-| **POL-006 — Customer Communication** | Required communication and relevant responses must be considered; an optional unanswered message must not unnecessarily block review. |
+- A browser-local simulation mode exists in the project. It is useful for offline UI testing and fallback demos.
+- **Browser-only records are not Supabase records.** Success in this mode does not prove backend persistence or API parity.
+- Do not merge browser-local records into server results or describe them as persisted; do not develop new IntelliOps investigation behavior against local mock data while claiming live backend verification.
+- The previously documented frontend configuration switch is `VITE_BANKING_API_URL`; inspect the current frontend mode selection logic before changing it.
 
-The AI may recommend an action, but **it cannot approve itself or execute financial corrections**. Policy checks use backend-controlled evidence and rules, not the LLM's confidence alone.
+### Why the distinction matters
+
+AI Investigation must retrieve the actual operational evidence for the case being investigated. A browser-only payment that never reached PostgreSQL cannot be independently retrieved by the database-backed evidence collector.
+
+## Portals and roles
+
+| Portal | Primary surfaces | Notes |
+|---|---|---|
+| **IntelliOps** | Overview, Exception Center, AI Investigation, Resolution Workflows, Approval Center, Audit Trail, Analytics | Some screens may be previews; verify actual API integration for each action. |
+| **Payment Processing** | Transactions; Create Synthetic Payment; transaction overview, Processing History and related records | A/B/C scenario selection is under **Duplicate Transaction**. |
+| **Core Banking / Ledger** | Accounts; Ledger Journals; journal details and debit/credit lines | Balanced individual journals are required; a missing/incorrect posting must not be fabricated to reconcile a case. |
+
+Two demo roles are documented: **Operations Analyst** (read/investigate/review) and **Administrator** (additional privileged simulation/approval operations where implemented). Enforce permissions on the **server**, not just by hiding UI buttons. The specific investigation route may accept either role depending on current route code.
 
 ## Supported exception categories
 
@@ -137,10 +144,6 @@ flowchart TB
 This is a modular backend and frontend application, **not a LangGraph-powered autonomous agent system**. Do not describe it as automatically performing corrective financial transactions.
 
 ## Roles, statuses and action boundaries
-
-In connected mode, select Analyst or Administrator and enter the credential configured as `INTELLIOPS_ANALYST_TOKEN` or `INTELLIOPS_ADMIN_TOKEN`. FastAPI derives the role from the credential, and sign-in rejects credentials that do not match the selected profile. Use the account menu to sign out and switch roles.
-
-Analysts can run simulations and inspect the full Approval Center queue and submitted context. Administrators can review the same context and approve or reject requests. Connected mode redirects Administrators to the Approval Center from other portal pages, and the backend enforces Administrator-only decisions.
 
 - **Analyst:** Inspect exceptions, request investigation or resolution recommendations, manage communication, assess plans and submit proposals for approval.
 - **Administrator:** Review, approve or reject sensitive proposals within the configured authorization workflow.
